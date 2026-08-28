@@ -1,0 +1,42 @@
+推免考核题目学生版.pdf
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+credentials.json
+token.json
+
+# Agent runtime output
+trajectories/*.jsonl
+logs/
+tmp/
+
+# Build and packaging
+build/
+dist/
+*.egg-info/
+
+# Editor and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

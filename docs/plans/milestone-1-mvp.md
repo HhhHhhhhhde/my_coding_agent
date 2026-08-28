@@ -1,0 +1,68 @@
+# Milestone 1: MVP Plan
+
+## 目标
+
+实现一个可以完成小型真实编程任务的最小可用 coding agent。
+
+## 必做范围
+
+1. CLI
+   - 支持输入用户任务。
+   - 支持 workspace、model、max_steps。
+   - 从环境变量读取 API key。
+
+2. LLM Client
+   - 支持 OpenAI 兼容接口。
+   - 能返回模型文本。
+   - 能处理调用失败。
+
+3. Agent Loop
+   - 支持多轮 action / observation。
+   - 支持 max_steps。
+   - 支持 finish 终止。
+   - 支持连续错误终止。
+
+4. Action Parser
+   - 解析 JSON action。
+   - 校验 tool 和 args。
+   - 解析失败反馈给模型。
+
+5. Tools
+   - list_dir。
+   - read_file。
+   - search。
+   - write_file。
+   - replace_in_file。
+   - run_shell。
+   - finish。
+
+6. Safety
+   - workspace 路径限制。
+   - 敏感文件拒绝。
+   - 命令超时。
+   - 输出截断。
+
+7. Logger
+   - 记录 JSONL 轨迹。
+   - 记录终止原因。
+
+8. Demo
+   - examples/demo_calculator。
+   - 一个失败测试。
+   - agent 能修复并运行测试通过。
+
+## 验收标准
+
+1. agent 能完成 demo_calculator 修复任务。
+2. 运行结束后能看到修改文件和验证结果。
+3. trajectory 日志包含每轮 action 和 observation。
+4. 不依赖任何 agent 框架。
+5. API key 不出现在仓库中。
+
+## 建议暂不做
+
+- repo map。
+- apply_patch。
+- Plan / Build 双模式。
+- 轨迹回放。
+- 多语言符号解析。

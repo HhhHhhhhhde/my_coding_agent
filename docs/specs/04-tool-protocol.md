@@ -83,6 +83,35 @@
 }
 ```
 
+多行文件优先使用：
+
+```json
+{
+  "path": "src/new_file.py",
+  "content_lines": [
+    "def hello():",
+    "    return \"hello\""
+  ]
+}
+```
+
+包含引号、docstring、反斜杠或较长代码的文件，优先使用：
+
+```json
+{
+  "path": "src/new_file.py",
+  "content_base64": "ZGVmIGhlbGxvKCk6CiAgICByZXR1cm4gImhlbGxvIgo="
+}
+```
+
+约束：
+
+- content、content_lines、content_base64 三选一。
+- content_lines 必须是字符串数组。
+- 使用 content_lines 时工具会用换行拼接，并在文件末尾补一个换行。
+- content_base64 必须是单行 UTF-8 base64 字符串，工具会解码后写入文件。
+- 如果写文件时因为 JSON 转义失败，下一轮应改用 content_base64 重试。
+
 ### replace_in_file
 
 用途：精确替换文件内容。
@@ -171,9 +200,24 @@
   "ok": false,
   "tool": "parser",
   "error_type": "InvalidJson",
-  "message": "Your response must be a single JSON object with action.tool and action.args."
+  "message": "Your response must be a single JSON object with action.tool and action.args.",
+  "data": {
+    "retryable": true,
+    "retry_hint": "Retry with exactly one valid JSON object. If you were writing code, use write_file with content_base64."
+  }
 }
 ```
+
+## 重试策略
+
+Agent Loop 不直接修补模型输出，而是将失败包装成 observation 并附带 retry_hint，让模型在下一轮自行恢复。
+
+典型重试提示：
+
+- InvalidJson：使用合法 JSON；如果在写代码，改用 content_base64。
+- InvalidAction：恢复到 action.tool / action.args 结构。
+- ReplacementNotUnique：先 read_file，再选择更小且唯一的 old 字符串。
+- UnknownTool：从当前 prompt 的可用工具列表中重新选择。
 
 ## 协议取舍
 

@@ -60,6 +60,7 @@ while not terminated:
 - 参数错误。
 - 工具执行异常。
 - 命令超时。
+- 重复探索或长时间不推进任务。
 - 达到最大步数。
 
 ## LLM Client
@@ -124,6 +125,8 @@ Action 结构：
 错误恢复：
 
 - 解析失败时，将错误作为 observation 反馈给模型。
+- 可恢复错误应附带 retry_hint。
+- InvalidJson 且意图是写文件时，引导模型改用 content_base64。
 - 不直接终止，除非连续解析失败超过上限。
 
 ## Tool Registry
@@ -174,6 +177,8 @@ Observation 结构：
 - list_dir(path)
 - read_file(path, start, end)
 - write_file(path, content)
+- write_file(path, content_lines)
+- write_file(path, content_base64)
 - replace_in_file(path, old, new)
 
 建议加分：
@@ -186,6 +191,7 @@ Observation 结构：
 - 默认拒绝敏感文件。
 - read_file 单次最多返回固定行数。
 - write_file 和 replace_in_file 必须记录 modified_files。
+- content、content_lines、content_base64 三种写入内容形式只能选择一种。
 
 ## Search Tools
 
@@ -245,6 +251,8 @@ Observation 结构：
 - 可用工具说明。
 - 最近 action/observation。
 - 必要的项目摘要。
+- inspected_paths。
+- exploration_streak。
 
 压缩策略：
 

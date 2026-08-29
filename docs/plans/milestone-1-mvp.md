@@ -36,9 +36,9 @@
    - run_shell。
    - finish。
 
-6. Safety
-   - workspace 路径限制。
-   - 敏感文件拒绝。
+6. Basic runtime boundaries
+   - 文件工具以 workspace 作为相对路径基准。
+   - 命令在 workspace 内执行。
    - 命令超时。
    - 输出截断。
 
@@ -66,3 +66,4 @@
 - Plan / Build 双模式。
 - 轨迹回放。
 - 多语言符号解析。
+- 完整 safety policy。

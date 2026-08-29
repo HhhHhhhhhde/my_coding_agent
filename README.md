@@ -2,7 +2,7 @@
 
 一个从零实现的编程智能体项目。它的目标是通过与大语言模型交互，在本地工作区内自主读取文件、搜索代码、修改文件、执行命令，并根据运行结果持续迭代，完成真实编程任务。
 
-本项目处于架构和规格设计阶段，当前重点是先明确模块边界、功能取舍和安全策略，再进入 MVP 实现。
+本项目已完成 Milestone 1 的基础链路：CLI、LLM 接入、JSON action 解析、工具注册、文件工具、搜索工具、命令执行工具、agent loop、轨迹日志、demo 项目和离线测试。CLI 还提供了一个零依赖文字交互界面，用于启动后输入任务并选择 plan/build 模式。
 
 ## 题目约束
 
@@ -18,7 +18,7 @@
 
 - agent loop 必须自研。
 - 工具协议和模型输出解析必须自研。
-- 本地文件和命令执行必须有安全边界。
+- 本地文件和命令执行需要逐步补齐安全边界。
 - 每一步 action 和 observation 必须可记录、可复盘。
 - agent 完成任务前应尽量运行测试或检查命令完成验证。
 
@@ -44,25 +44,72 @@ User / CLI
 
 ## MVP 必做功能
 
-- 多轮 agent loop。
-- 自研 JSON action 协议。
-- 目录查看和按行读取文件。
-- 代码搜索。
-- 文件创建和精确修改。
-- 本地命令执行。
-- workspace 路径限制。
-- 命令超时和输出截断。
-- 运行轨迹日志。
-- 完成总结和验证记录。
+- 多轮 agent loop：已完成。
+- 自研 JSON action 协议：已完成。
+- 目录查看和按行读取文件：已完成。
+- 代码搜索：已完成。
+- 文件创建和精确修改：已完成。
+- 本地命令执行：已完成。
+- 命令超时和输出截断：已完成。
+- 运行轨迹日志：已完成。
+- 完成总结和验证记录：已完成。
 
 ## 加分功能候选
 
-- Plan / Build 双模式：Plan 模式只读分析，Build 模式允许修改和执行。
+- Plan / Build 双模式：已完成轻量版。Plan 模式只注册读、搜和 finish，Build 模式允许修改和执行。
 - 轻量 repo map：扫描项目文件树和关键符号，减少盲目读取。
 - apply_patch 编辑工具：用 patch 方式做更精确的代码修改。
 - 验证门禁：finish 前要求测试、构建或说明无法验证。
 - 轨迹回放：把 JSONL 运行日志转成人类可读报告。
 - 高风险操作确认：删除、覆盖、安装依赖等操作需要额外确认。
+- 完整 safety policy：workspace 越界拒绝、敏感文件拒绝、危险命令治理。
+
+## 运行方式
+
+先复制 `.env.example` 为本地 `.env`，并填入自己的 API key。`.env` 不会入库。
+
+普通命令模式：
+
+```bash
+uv run python -m mini_agent --workspace examples/demo_calculator --max-steps 20 "请修复这个项目中的测试失败，并验证测试通过。"
+```
+
+交互启动模式：
+
+```bash
+uv run python -m mini_agent -i
+```
+
+也可以使用安装后的脚本入口：
+
+```bash
+uv run my-coding-agent --workspace examples/demo_calculator "请修复这个项目中的测试失败，并验证测试通过。"
+```
+
+Plan 模式示例：
+
+```bash
+uv run python -m mini_agent --mode plan --workspace examples/demo_task_manager "请阅读这个项目并给出修复测试失败的计划。"
+```
+
+## 测试
+
+```bash
+uv run --extra dev pytest -q tests
+```
+
+当前 demo 项目故意包含一个失败测试，用于视频中展示 agent 从失败到修复的过程：
+
+```bash
+uv run --extra dev pytest -q examples/demo_calculator
+```
+
+更复杂的演示项目包含多函数、多测试和多处潜在修复点：
+
+```bash
+uv run --extra dev pytest -q examples/demo_task_manager
+uv run python -m mini_agent --workspace examples/demo_task_manager --max-steps 20 "请修复这个任务管理器项目中的测试失败，并验证测试通过。"
+```
 
 ## 当前文档
 
@@ -76,7 +123,7 @@ User / CLI
 
 ## 计划
 
-第一阶段先完成 MVP，让 agent 能在一个小型 demo 项目中修复失败测试并验证通过。第二阶段再补充 Plan / Build、git diff、验证门禁、repo map 和轨迹回放等加分功能。
+第一阶段已完成基础链路和轻量 Plan / Build。第二阶段再补充完整 safety policy、git diff、验证门禁、repo map 和轨迹回放等加分功能。
 
 详细计划见：
 

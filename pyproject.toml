@@ -1,0 +1,27 @@
+[project]
+name = "my-coding-agent"
+version = "0.1.0"
+description = "A from-scratch coding agent for local programming tasks."
+requires-python = ">=3.10"
+dependencies = [
+  "openai>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0.0",
+]
+
+[project.scripts]
+my-coding-agent = "mini_agent.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

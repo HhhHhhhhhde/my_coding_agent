@@ -31,8 +31,14 @@
 5. Long-term task summary
    - 更早步骤的压缩摘要。
    - 已修改文件。
+   - 已查看路径。
    - 已运行命令。
    - 当前失败或阻塞点。
+
+6. Target-focus hints
+   - 如果用户任务明确指定目标路径，应优先围绕该路径行动。
+   - 如果目标目录不存在，Build 模式应创建目标文件，不应反复查看无关示例。
+   - 相似示例最多查看一个，用于确认风格后就进入目标实现。
 
 ## 初始项目摘要
 
@@ -76,8 +82,30 @@ MVP 可以只支持 Python。
 2. 保留最近 6 轮完整 action/observation。
 3. 将更早 observation 压缩成短摘要。
 4. 永远保留 modified_files。
-5. 永远保留 verification_records。
-6. 永远保留最近一次错误。
+5. 永远保留 inspected_paths。
+6. 永远保留 verification_records。
+7. 永远保留最近一次错误。
+
+## 重复探索抑制
+
+工具执行后会记录 inspected_paths：
+
+- list_dir 记录被列出的目录。
+- read_file 记录被读取的文件。
+- search 记录搜索根路径。
+
+每轮 prompt 都会把 inspected_paths 放进 Current state。模型应利用该列表避免重复查看同一路径，除非该路径刚被修改或上一次访问失败。
+
+## 进展守卫
+
+Agent Loop 会对探索行为做轻量约束：
+
+- 探索工具包括 list_dir、read_file、search。
+- 同一工具反复查看同一路径超过限制时，返回 RepeatedInspection。
+- Build 模式连续探索超过预算时，返回 ExplorationBudgetExceeded。
+- 这些 observation 会附带 retry_hint，要求模型停止探索，转向 write_file、replace_in_file、run_shell 或 finish。
+
+这个机制用于处理模型“虽然每步都成功，但一直不推进任务”的情况。它不是替代模型推理，而是给 agent loop 增加最低限度的进展控制。
 
 ## Observation 截断策略
 

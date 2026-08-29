@@ -19,6 +19,7 @@ BANNER_LINES = [
     "◆ ◈  C O D I N G   A G E N T  ◈ ◆",
     "from-scratch local programming assistant",
 ]
+EXIT_COMMANDS = {"q", "quit", "exit", ":q"}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -40,10 +41,13 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.interactive or not args.task:
-        args = read_interactive_args(args)
-    if not args.task:
-        raise SystemExit("No task provided.")
+        return run_interactive_session(args)
     config = load_config(args.model)
+    result = run_single_task(args, config)
+    return 0 if result.success else 1
+
+
+def run_single_task(args: argparse.Namespace, config: object) -> AgentResult:
     workspace = Path(args.workspace).resolve()
     print_header(args.task, workspace, config.model, args.max_steps, args.mode)
     agent = CodingAgent(
@@ -59,30 +63,59 @@ def main(argv: list[str] | None = None) -> int:
         output_path = save_plan_result(result.summary, workspace, Path(args.plan_output_dir), args.task)
         result = replace(result, output_path=str(output_path))
     print_result(result)
-    return 0 if result.success else 1
+    return result
+
+
+def run_interactive_session(args: argparse.Namespace) -> int:
+    config = load_config(args.model)
+    clear_screen()
+    print_banner(args.mode)
+    args.mode = choose_mode(args.mode)
+
+    while True:
+        args = read_interactive_args(args)
+        if not args.task:
+            print("  No task entered. Bye.")
+            return 0
+        if is_exit_command(args.task):
+            print("  Bye.")
+            return 0
+
+        run_single_task(args, config)
+        args.task = ""
+        next_action = input("  Next: Enter=new task, b=build, p=plan, m=switch, q=quit\n  > ").strip().lower()
+        if is_exit_command(next_action):
+            print("  Bye.")
+            return 0
+        if next_action in {"b", "build", "1"}:
+            args.mode = "build"
+        elif next_action in {"p", "plan", "2"}:
+            args.mode = "plan"
+        elif next_action in {"m", "t", "switch"}:
+            args.mode = "plan" if args.mode == "build" else "build"
 
 
 def read_interactive_args(args: argparse.Namespace) -> argparse.Namespace:
     clear_screen()
     print_banner(args.mode)
-    mode = choose_mode(args.mode)
-    clear_screen()
-    print_banner(mode)
-    print("  Enter task and options. Press Enter to keep defaults.")
+    print("  Enter task and options. q/quit/exit to leave. Press Enter to keep defaults.")
     print()
     task = input_line("Task", args.task or "")
     workspace = input_line("Workspace", args.workspace)
     max_steps_raw = input_line("Max steps", str(args.max_steps))
-    if mode == "plan":
+    if args.mode == "plan":
         args.plan_output_dir = input_line("Plan dir", args.plan_output_dir)
     args.task = task
     args.workspace = workspace or "."
-    args.mode = mode
     try:
         args.max_steps = int(max_steps_raw)
     except ValueError:
         args.max_steps = 20
     return args
+
+
+def is_exit_command(value: str) -> bool:
+    return value.strip().lower() in EXIT_COMMANDS
 
 
 def print_banner(mode: str) -> None:

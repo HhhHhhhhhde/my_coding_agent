@@ -1,4 +1,4 @@
-# Milestone 1: MVP Plan
+# Milestone 1: MVP Agent Loop
 
 ## 目标
 
@@ -51,6 +51,11 @@
    - 一个失败测试。
    - agent 能修复并运行测试通过。
 
+9. Lightweight Plan / Build
+   - Build 模式允许完整工具链。
+   - Plan 模式只允许读取、搜索和 finish。
+   - CLI 支持模式选择和连续交互。
+
 ## 验收标准
 
 1. agent 能完成 demo_calculator 修复任务。
@@ -58,12 +63,13 @@
 3. trajectory 日志包含每轮 action 和 observation。
 4. 不依赖任何 agent 框架。
 5. API key 不出现在仓库中。
+6. Plan 模式不会修改文件。
+7. 连续交互模式可以在一轮任务结束后继续执行下一轮。
 
 ## 建议暂不做
 
 - repo map。
 - apply_patch。
-- Plan / Build 双模式。
 - 轨迹回放。
 - 多语言符号解析。
 - 完整 safety policy。

@@ -14,19 +14,13 @@ class TaskManager:
         self._tasks: list[Task] = []
 
     def add(self, title: str) -> Task:
-        task = Task(title=title, completed=False)
-        self._tasks.append(task)
-        return task
+        raise NotImplementedError
 
     def complete(self, title: str) -> bool:
-        for task in self._tasks:
-            if task.title == title:
-                task.completed = True
-                return True
-        return False
+        raise NotImplementedError
 
     def active_titles(self) -> list[str]:
-        return [task.title for task in self._tasks if not task.completed]
+        raise NotImplementedError
 
     def completed_count(self) -> int:
-        return sum(1 for task in self._tasks if task.completed)
+        raise NotImplementedError

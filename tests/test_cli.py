@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from mini_agent.cli import save_plan_result, wrap_box_line, wrap_visual
+from mini_agent.cli import is_exit_command, save_plan_result, wrap_box_line, wrap_visual
 
 
 def test_wrap_visual_accounts_for_wide_characters() -> None:
@@ -28,3 +28,9 @@ def test_save_plan_result_writes_markdown_to_default_style_dir(tmp_path: Path) -
     assert "# Agent Plan" in content
     assert "设计闹钟" in content
     assert "定时模块" in content
+
+
+def test_exit_commands_are_recognized_case_insensitively() -> None:
+    assert is_exit_command("Q")
+    assert is_exit_command(" quit ")
+    assert not is_exit_command("build")

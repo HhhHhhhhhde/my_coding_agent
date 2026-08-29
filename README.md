@@ -80,6 +80,8 @@ uv run python -m mini_agent --workspace examples/demo_calculator --max-steps 20 
 uv run python -m mini_agent -i
 ```
 
+交互模式会连续运行：每轮任务结束后可以继续输入新任务，或输入 `q`、`quit`、`exit` 退出。
+
 也可以使用安装后的脚本入口：
 
 ```bash
@@ -111,6 +113,19 @@ uv run --extra dev pytest -q examples/demo_task_manager
 uv run python -m mini_agent --workspace examples/demo_task_manager --max-steps 20 "请修复这个任务管理器项目中的测试失败，并验证测试通过。"
 ```
 
+更复杂的 build 能力测试用例：
+
+```bash
+uv run --extra dev pytest -q examples/demo_expense_reconciler
+uv run python -m mini_agent --workspace examples/demo_expense_reconciler --max-steps 30 "请实现这个费用对账示例中的核心函数，并让当前目录下的测试通过。"
+```
+
+复杂 plan 能力测试用例：
+
+```bash
+uv run python -m mini_agent --mode plan --workspace examples/plan_alarm_core_architecture --plan-output-dir ../../plans "请阅读这个 brief，并输出定时闹钟核心模块架构计划。"
+```
+
 ## 当前文档
 
 - `docs/specs/01-requirements.md`：需求、必做功能、加分功能和不做范围。
@@ -127,5 +142,8 @@ uv run python -m mini_agent --workspace examples/demo_task_manager --max-steps 2
 
 详细计划见：
 
+- `docs/plans/roadmap.md`
 - `docs/plans/milestone-1-mvp.md`
-- `docs/plans/milestone-2-quality.md`
+- `docs/plans/milestone-2-context-management.md`
+- `docs/plans/milestone-3-reliability-safety.md`
+- `docs/plans/milestone-4-observability-knowledge.md`

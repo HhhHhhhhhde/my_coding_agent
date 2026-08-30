@@ -4,6 +4,7 @@ import argparse
 from dataclasses import replace
 from datetime import datetime
 import os
+import shutil
 import sys
 from pathlib import Path
 from unicodedata import east_asian_width
@@ -18,8 +19,13 @@ from .turn_summary import generate_turn_summary
 
 
 BOX_WIDTH = 66
+MODE_BOX_WIDTH = 92
+BANNER_BOX_WIDTH = 92
 BANNER_LINES = [
-    "◆ ◈  C O D I N G   A G E N T  ◈ ◆",
+    "  ___  ___  ___  ___  _  _  ___     ___  ___  ___  _  _  _____ ",
+    " / __|/ _ \\|   \\|_ _|| \\| |/ __|   /   \\| __|| __|| \\| ||_   _|",
+    "| (__| (_) | |) || | | .` | (_ |   | - || _| | _| | .` |  | |  ",
+    " \\___|\\___/|___/|___||_|\\_|\\___|   |_|_||___||___||_|\\_|  |_|  ",
     "from-scratch local programming assistant",
 ]
 EXIT_COMMANDS = {"q", "quit", "exit", ":q"}
@@ -260,7 +266,7 @@ def wait_for_enter() -> None:
 
 
 def print_banner(mode: str) -> None:
-    print_box([*BANNER_LINES, "", f"agent mode: {mode}"], border="double")
+    print_box([*BANNER_LINES, "", f"agent mode: {mode}"], border="double", width=BANNER_BOX_WIDTH, center=True)
 
 
 def input_line(label: str, default: str) -> str:
@@ -309,21 +315,23 @@ def choose_mode_fallback(default: str) -> str:
 def print_mode_card(mode: str) -> None:
     build = "● BUILD" if mode == "build" else "○ build"
     plan = "● PLAN " if mode == "plan" else "○ plan "
+    option_line = f"{build}             {plan}"
     print_box(
         [
             "Run Mode",
             "",
-            f"{build:^18}  {plan:^18}",
+            center_line(option_line),
             "",
-            "m / Space / Tab : switch",
-            "b or 1          : build",
-            "p or 2          : plan",
-            "Enter           : confirm",
+            center_line("m / Space / Tab : switch"),
+            center_line("b or 1          : build"),
+            center_line("p or 2          : plan"),
+            center_line("Enter           : confirm"),
         ],
-        indent=2,
+        width=MODE_BOX_WIDTH,
+        center=True,
     )
     print()
-    print("  Waiting for key...", end="", flush=True)
+    print(f"{box_prefix(MODE_BOX_WIDTH, center=True)}Waiting for key...", end="", flush=True)
 
 
 def clear_screen() -> None:
@@ -428,19 +436,21 @@ def clip(text: str, limit: int) -> str:
     return text[: limit - 3] + "..."
 
 
-def print_box(lines: list[str], indent: int = 0, border: str = "single") -> None:
-    prefix = " " * indent
+def print_box(lines: list[str], indent: int = 0, border: str = "single", width: int = BOX_WIDTH, center: bool = False) -> None:
+    prefix = box_prefix(width, indent=indent, center=center)
     if border == "double":
         top_left, top_right, bottom_left, bottom_right, horizontal, vertical = "╔", "╗", "╚", "╝", "═", "║"
     else:
         top_left, top_right, bottom_left, bottom_right, horizontal, vertical = "╭", "╮", "╰", "╯", "─", "│"
-    inner_width = BOX_WIDTH - 2
+    inner_width = width - 2
     content_width = inner_width - 2
     print(prefix + top_left + horizontal * inner_width + top_right)
     for raw_line in lines:
-        wrapped_lines = wrap_box_line(raw_line, content_width)
+        center = should_center_box_line(raw_line)
+        visible_line = strip_center_marker(raw_line)
+        wrapped_lines = wrap_box_line(visible_line, content_width)
         for line in wrapped_lines:
-            if raw_line in BANNER_LINES or raw_line in {"Run Mode", "Turn Summary", "Mini Coding Agent"}:
+            if center:
                 line = center_visual(line, content_width)
             print(prefix + vertical + " " + pad_visual(line, content_width) + " " + vertical)
     print(prefix + bottom_left + horizontal * inner_width + bottom_right)
@@ -448,7 +458,7 @@ def print_box(lines: list[str], indent: int = 0, border: str = "single") -> None
 
 
 def wrap_box_line(text: str, width: int) -> list[str]:
-    if text == "" or text in BANNER_LINES or text in {"Run Mode", "Turn Summary", "Mini Coding Agent"}:
+    if text == "" or should_center_box_line(text):
         return wrap_visual(text, width)
 
     separator_index = text.find(": ")
@@ -464,6 +474,13 @@ def wrap_box_line(text: str, width: int) -> list[str]:
     value_lines = wrap_visual(value, width - prefix_width)
     continuation = " " * len(prefix)
     return [prefix + value_lines[0], *[continuation + line for line in value_lines[1:]]]
+
+
+def box_prefix(width: int, indent: int = 0, center: bool = False) -> str:
+    if not center:
+        return " " * indent
+    terminal_width = shutil.get_terminal_size(fallback=(width + indent, 24)).columns
+    return " " * max(indent, (terminal_width - width) // 2)
 
 
 def wrap_visual(text: str, width: int) -> list[str]:
@@ -495,6 +512,20 @@ def visual_width(text: str) -> int:
     for char in text:
         width += 2 if east_asian_width(char) in {"F", "W"} else 1
     return width
+
+
+def center_line(text: str) -> str:
+    return f"__center__{text}"
+
+
+def should_center_box_line(text: str) -> bool:
+    return text.startswith("__center__") or text in BANNER_LINES or text in {"Run Mode", "Turn Summary", "Mini Coding Agent"}
+
+
+def strip_center_marker(text: str) -> str:
+    if text.startswith("__center__"):
+        return text.removeprefix("__center__")
+    return text
 
 
 def pad_visual(text: str, width: int) -> str:

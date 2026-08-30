@@ -1,9 +1,15 @@
 from pathlib import Path
 
 from mini_agent.cli import (
+    BANNER_LINES,
+    MODE_BOX_WIDTH,
+    box_prefix,
+    center_line,
     is_context_dependent_task,
     is_exit_command,
     is_session_command,
+    print_box,
+    print_banner,
     save_plan_result,
     summarize_step,
     wrap_box_line,
@@ -25,6 +31,46 @@ def test_wrap_box_line_aligns_field_continuation() -> None:
     assert len(lines) > 1
     assert lines[0].startswith("Task      : ")
     assert lines[1].startswith(" " * len("Task      : "))
+
+
+def test_print_box_supports_wider_centered_lines(capsys) -> None:
+    print_box(["Run Mode", "", center_line("● BUILD             ○ plan")], indent=2, width=MODE_BOX_WIDTH)
+
+    output = capsys.readouterr().out
+
+    assert "__center__" not in output
+    assert "● BUILD" in output
+    assert "○ plan" in output
+    assert "  ╭" in output
+    assert "─" * (MODE_BOX_WIDTH - 2) in output
+
+
+def test_print_box_can_center_itself(monkeypatch, capsys) -> None:
+    monkeypatch.setattr("mini_agent.cli.shutil.get_terminal_size", lambda fallback: os_size(120, 24))
+
+    print_box(["Run Mode"], width=MODE_BOX_WIDTH, center=True)
+
+    output = capsys.readouterr().out
+    assert output.startswith(" " * 14 + "╭")
+
+
+def test_banner_uses_large_ascii_letters(capsys) -> None:
+    print_banner("build")
+
+    output = capsys.readouterr().out
+    assert BANNER_LINES[0].strip() in output
+    assert "/ __|" in output
+    assert "agent mode: build" in output
+
+
+def test_box_prefix_falls_back_to_indent_when_terminal_is_narrow(monkeypatch) -> None:
+    monkeypatch.setattr("mini_agent.cli.shutil.get_terminal_size", lambda fallback: os_size(70, 24))
+
+    assert box_prefix(MODE_BOX_WIDTH, indent=2, center=True) == "  "
+
+
+def os_size(columns: int, lines: int):
+    return type("Size", (), {"columns": columns, "lines": lines})()
 
 
 def test_save_plan_result_writes_markdown_to_default_style_dir(tmp_path: Path) -> None:

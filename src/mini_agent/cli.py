@@ -94,8 +94,23 @@ def run_interactive_session(args: argparse.Namespace) -> int:
             args.task = ""
             continue
 
+        session_context = session.to_prompt_context()
+        if is_context_dependent_task(args.task) and not session_context:
+            print_box(
+                [
+                    "Session",
+                    "",
+                    "会话上下文为空，无法继续刚才的任务。",
+                    "请重新输入明确目标，例如：请阅读 examples/demo_calculator 并修复测试。",
+                    f"当前工作区仍是 {Path(args.workspace).resolve()}。",
+                ]
+            )
+            wait_for_enter()
+            args.task = ""
+            continue
+
         workspace = str(Path(args.workspace).resolve())
-        result = run_single_task(args, config, session_context=session.to_prompt_context())
+        result = run_single_task(args, config, session_context=session_context)
         turn = build_session_turn(args.task, args.mode, workspace, result)
         session.add_turn(turn)
         args.task = ""
@@ -162,7 +177,14 @@ def handle_session_command(command: str, args: argparse.Namespace, session: Sess
         return True
     if name == "/clear":
         session.clear()
-        print_box(["Session", "", "会话上下文已清空，后续任务不会再携带之前的任务摘要。"])
+        print_box(
+            [
+                "Session",
+                "",
+                "会话上下文已清空，后续任务不会再携带之前的任务摘要。",
+                f"当前工作区仍是 {Path(args.workspace).resolve()}，当前模式仍是 {args.mode}。",
+            ]
+        )
         return False
     if name in {"/summary", "/last"}:
         turn = session.last_turn()
@@ -212,6 +234,25 @@ def handle_session_command(command: str, args: argparse.Namespace, session: Sess
 
     print_box(["Session", "", "未知会话命令。使用 /help 查看可用命令。"])
     return False
+
+
+def is_context_dependent_task(task: str) -> bool:
+    normalized = task.strip().lower()
+    if not normalized:
+        return False
+    markers = [
+        "继续",
+        "刚才",
+        "上一轮",
+        "上一步",
+        "前面",
+        "之前",
+        "continue",
+        "previous",
+        "last task",
+        "last turn",
+    ]
+    return any(marker in normalized for marker in markers)
 
 
 def wait_for_enter() -> None:

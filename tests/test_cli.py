@@ -1,6 +1,14 @@
 from pathlib import Path
 
-from mini_agent.cli import is_exit_command, is_session_command, save_plan_result, summarize_step, wrap_box_line, wrap_visual
+from mini_agent.cli import (
+    is_context_dependent_task,
+    is_exit_command,
+    is_session_command,
+    save_plan_result,
+    summarize_step,
+    wrap_box_line,
+    wrap_visual,
+)
 from mini_agent.protocol import Action, Observation
 
 
@@ -42,6 +50,13 @@ def test_session_commands_are_recognized_by_slash_prefix() -> None:
     assert is_session_command("/mode plan")
     assert is_session_command("/unknown")
     assert not is_session_command("clear")
+
+
+def test_context_dependent_tasks_are_recognized() -> None:
+    assert is_context_dependent_task("继续刚才的任务")
+    assert is_context_dependent_task("continue previous task")
+    assert is_context_dependent_task("把上一轮继续做完")
+    assert not is_context_dependent_task("请阅读 examples/demo_calculator")
 
 
 def test_step_summary_is_continuous_chinese_text() -> None:

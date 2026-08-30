@@ -110,6 +110,8 @@
 - content_lines 必须是字符串数组。
 - 使用 content_lines 时工具会用换行拼接，并在文件末尾补一个换行。
 - content_base64 必须是单行 UTF-8 base64 字符串，工具会解码后写入文件。
+- 单次 write_file 最多写入 100 行内容；更大的文件必须由模型分块生成。
+- 生成大文件时，模型不能在一次响应里输出完整文件；第一轮只写当前 chunk，工具确认后再进入下一轮。
 - 如果写文件时因为 JSON 转义失败，下一轮应改用 content_base64 重试。
 
 ### replace_in_file
@@ -130,6 +132,31 @@
 
 - old 必须在文件中唯一出现。
 - 如果出现 0 次或多次，工具返回错误。
+
+### append_file
+
+用途：向文件末尾追加内容。适合生成较大的新文件时，在 `write_file` 写入 MVP 骨架后继续分块补充。
+
+参数格式与 `write_file` 相同：
+
+```json
+{
+  "path": "src/new_file.py",
+  "content_lines": [
+    "",
+    "def extra_feature():",
+    "    return True"
+  ]
+}
+```
+
+约束：
+
+- content、content_lines、content_base64 三选一。
+- 单次 append_file 最多追加 100 行内容。
+- 大文件应按约 60-100 行一块分块生成并写入，避免模型一次输出超长 JSON 或长时间等待响应。
+- append_file 成功后会返回本次追加行数，模型可据此继续生成下一块。
+- plan 模式不提供 append_file。
 
 ### run_shell
 
@@ -214,7 +241,7 @@ Agent Loop 不直接修补模型输出，而是将失败包装成 observation �
 
 典型重试提示：
 
-- InvalidJson：使用合法 JSON；如果在写代码，改用 content_base64。
+- InvalidJson：使用合法 JSON；如果响应过长或被截断，改成 40-80 行的小 chunk；如果在写代码，可改用 content_base64。
 - InvalidAction：恢复到 action.tool / action.args 结构。
 - ReplacementNotUnique：先 read_file，再选择更小且唯一的 old 字符串。
 - UnknownTool：从当前 prompt 的可用工具列表中重新选择。

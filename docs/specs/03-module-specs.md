@@ -81,6 +81,9 @@ while not terminated:
 - API key 通过环境变量读取。
 - base_url 可通过环境变量配置。
 - 调用失败时返回可诊断错误。
+- 单次输出 token 上限可配置，避免长代码生成导致 CLI 长时间等待。
+- 空 message.content 在 LLM Client 内部重试，耗尽后返回包含 finish_reason、usage、message keys 的诊断错误。
+- 如果空响应由 reasoning_tokens 耗尽输出预算导致，重试时临时提高 max_tokens 并追加短 JSON action 恢复提示。
 
 不负责：
 
@@ -179,6 +182,9 @@ Observation 结构：
 - write_file(path, content)
 - write_file(path, content_lines)
 - write_file(path, content_base64)
+- append_file(path, content)
+- append_file(path, content_lines)
+- append_file(path, content_base64)
 - replace_in_file(path, old, new)
 
 建议加分：
@@ -190,7 +196,8 @@ Observation 结构：
 - 路径必须在 workspace 内。
 - 默认拒绝敏感文件。
 - read_file 单次最多返回固定行数。
-- write_file 和 replace_in_file 必须记录 modified_files。
+- write_file、append_file 和 replace_in_file 必须记录 modified_files。
+- write_file 和 append_file 单次写入不超过 100 行，较大文件由模型分块生成。
 - content、content_lines、content_base64 三种写入内容形式只能选择一种。
 
 ## Search Tools
@@ -253,12 +260,34 @@ Observation 结构：
 - 必要的项目摘要。
 - inspected_paths。
 - exploration_streak。
+- target_scope 和 target_scope_reason。
+- Persistent Working Notes。
 
 压缩策略：
 
-- 保留最近 6 轮原始历史。
+- 保留最近 10 轮原始历史。
 - 更早历史压缩成摘要。
 - 始终保留已修改文件和验证结果。
+- 对 README、GAMEPLAY、DESIGN、REQUIREMENTS、SPEC 等重要说明文件生成持久工作笔记。
+- runtime 生成 Rolling Task Summary，总结被挤出 recent history 的旧步骤。
+
+## Target Scope Guard
+
+职责：
+
+- 根据用户任务中的显式路径初始化目标范围。
+- 根据已读重要说明文件锁定目标目录。
+- 在路径类工具执行前检查是否偏离目标目录。
+- 对偏离目标目录的访问返回 TargetScopeViolation。
+
+覆盖工具：
+
+- list_dir
+- read_file
+- search
+- write_file
+- append_file
+- replace_in_file
 
 ## Safety Policy
 

@@ -11,7 +11,10 @@ from unicodedata import east_asian_width
 from .agent import CodingAgent
 from .config import load_config
 from .llm import LLMClient
+from .logger import append_turn_summary
 from .protocol import Action, AgentResult, Observation
+from .session import SessionState, build_session_turn, format_turn_summary
+from .turn_summary import generate_turn_summary
 
 
 BOX_WIDTH = 66
@@ -47,27 +50,31 @@ def main(argv: list[str] | None = None) -> int:
     return 0 if result.success else 1
 
 
-def run_single_task(args: argparse.Namespace, config: object) -> AgentResult:
+def run_single_task(args: argparse.Namespace, config: object, session_context: str = "") -> AgentResult:
     workspace = Path(args.workspace).resolve()
     print_header(args.task, workspace, config.model, args.max_steps, args.mode)
+    llm = LLMClient(config)
     agent = CodingAgent(
-        llm=LLMClient(config),
+        llm=llm,
         workspace=workspace,
         max_steps=args.max_steps,
         mode=args.mode,
         on_step=print_step,
         on_thinking=print_thinking,
     )
-    result = agent.run(args.task)
+    result = agent.run(args.task, session_context=session_context)
     if args.mode == "plan" and result.summary:
         output_path = save_plan_result(result.summary, workspace, Path(args.plan_output_dir), args.task)
         result = replace(result, output_path=str(output_path))
-    print_result(result)
+    result = replace(result, turn_summary=generate_turn_summary(llm, args.task, args.mode, workspace, result))
+    append_turn_summary(Path(result.trajectory_path), result.turn_summary, result.output_path)
+    print_turn_result(result)
     return result
 
 
 def run_interactive_session(args: argparse.Namespace) -> int:
     config = load_config(args.model)
+    session = SessionState()
     clear_screen()
     print_banner(args.mode)
     args.mode = choose_mode(args.mode)
@@ -80,13 +87,30 @@ def run_interactive_session(args: argparse.Namespace) -> int:
         if is_exit_command(args.task):
             print("  Bye.")
             return 0
+        if is_session_command(args.task):
+            if handle_session_command(args.task, args, session):
+                return 0
+            wait_for_enter()
+            args.task = ""
+            continue
 
-        run_single_task(args, config)
+        workspace = str(Path(args.workspace).resolve())
+        result = run_single_task(args, config, session_context=session.to_prompt_context())
+        turn = build_session_turn(args.task, args.mode, workspace, result)
+        session.add_turn(turn)
         args.task = ""
-        next_action = input("  Next: Enter=new task, b=build, p=plan, m=switch, q=quit\n  > ").strip().lower()
+        next_action = input(
+            "  Next: Enter=new task, b=build, p=plan, m=switch, /history, /clear, q=quit\n  > "
+        ).strip()
         if is_exit_command(next_action):
             print("  Bye.")
             return 0
+        if is_session_command(next_action):
+            if handle_session_command(next_action, args, session):
+                return 0
+            wait_for_enter()
+            continue
+        next_action = next_action.lower()
         if next_action in {"b", "build", "1"}:
             args.mode = "build"
         elif next_action in {"p", "plan", "2"}:
@@ -98,9 +122,12 @@ def run_interactive_session(args: argparse.Namespace) -> int:
 def read_interactive_args(args: argparse.Namespace) -> argparse.Namespace:
     clear_screen()
     print_banner(args.mode)
-    print("  Enter task and options. q/quit/exit to leave. Press Enter to keep defaults.")
+    print("  Enter task or command. Use /help for session commands. q/quit/exit to leave.")
     print()
     task = input_line("Task", args.task or "")
+    args.task = task
+    if is_exit_command(task) or is_session_command(task):
+        return args
     workspace = input_line("Workspace", args.workspace)
     max_steps_raw = input_line("Max steps", str(args.max_steps))
     if args.mode == "plan":
@@ -116,6 +143,79 @@ def read_interactive_args(args: argparse.Namespace) -> argparse.Namespace:
 
 def is_exit_command(value: str) -> bool:
     return value.strip().lower() in EXIT_COMMANDS
+
+
+def is_session_command(value: str) -> bool:
+    text = value.strip().lower()
+    return text.startswith("/")
+
+
+def handle_session_command(command: str, args: argparse.Namespace, session: SessionState) -> bool:
+    text = command.strip()
+    lower = text.lower()
+    name, _, value = text.partition(" ")
+    name = name.lower()
+    value = value.strip()
+
+    if lower in {"/q", "/quit", "/exit"}:
+        print("  Bye.")
+        return True
+    if name == "/clear":
+        session.clear()
+        print_box(["Session", "", "会话上下文已清空，后续任务不会再携带之前的任务摘要。"])
+        return False
+    if name in {"/summary", "/last"}:
+        turn = session.last_turn()
+        text = format_turn_summary(turn) if turn else "当前会话还没有上一轮任务总结。"
+        print_box(["Session Summary", "", text])
+        return False
+    if name == "/history":
+        print_box(["Session History", "", session.history_text()])
+        return False
+    if name == "/mode":
+        if value.lower() in {"build", "plan"}:
+            args.mode = value.lower()
+            print_box(["Session", "", f"后续任务将使用 {args.mode} 模式。"])
+        else:
+            print_box(["Session", "", "请使用 /mode build 或 /mode plan。"])
+        return False
+    if name == "/workspace":
+        if value:
+            args.workspace = value
+            print_box(["Session", "", f"后续任务的工作区已切换为 {Path(args.workspace).resolve()}。"])
+        else:
+            print_box(["Session", "", f"当前工作区是 {Path(args.workspace).resolve()}。"])
+        return False
+    if name == "/maxsteps":
+        try:
+            args.max_steps = int(value)
+            print_box(["Session", "", f"后续任务的最大步数已设置为 {args.max_steps}。"])
+        except ValueError:
+            print_box(["Session", "", "请使用 /maxsteps 20 这样的整数参数。"])
+        return False
+    if name == "/help":
+        print_box(
+            [
+                "Session Commands",
+                "",
+                "/summary        查看上一轮任务总结",
+                "/history        查看最近几轮任务摘要",
+                "/clear          清空会话上下文",
+                "/mode build     切换到 build 模式",
+                "/mode plan      切换到 plan 模式",
+                "/workspace PATH 切换工作区",
+                "/maxsteps N     设置最大步数",
+                "/quit           退出",
+            ]
+        )
+        return False
+
+    print_box(["Session", "", "未知会话命令。使用 /help 查看可用命令。"])
+    return False
+
+
+def wait_for_enter() -> None:
+    input("  Press Enter to continue...")
 
 
 def print_banner(mode: str) -> None:
@@ -205,38 +305,63 @@ def print_header(task: str, workspace: Path, model: str, max_steps: int, mode: s
 
 
 def print_step(step: int, action: Action | None, observation: Observation) -> None:
-    tool = action.tool if action else observation.tool
-    status = "OK" if observation.ok else "ERR"
-    detail = observation.message or first_line(observation.content) or "-"
-    marker = "✓" if observation.ok else "!"
-    print(f"\r  {marker} step {step:02d}  {tool:<16} {status:<3}  {detail}")
+    clear_line = "\r" + " " * 140 + "\r"
+    print(clear_line + "  " + summarize_step(step, action, observation))
 
 
 def print_thinking(step: int) -> None:
     print(f"  · step {step:02d}  Thinking... waiting for model response", end="", flush=True)
 
 
-def print_result(result: AgentResult) -> None:
-    summary = result.summary or "-"
-    if result.output_path:
-        summary = f"Plan written to {result.output_path}"
-    lines = [
-        "Result",
-        "",
-        f"Status     : {'success' if result.success else 'stopped'}",
-        f"Reason     : {result.termination_reason}",
-        f"Summary    : {summary}",
-        f"Modified   : {', '.join(result.modified_files) if result.modified_files else 'none'}",
-    ]
-    if result.verification_records:
-        for record in result.verification_records:
-            status = "passed" if record.passed else "failed"
-            text = f"{record.command} -> {status} ({record.exit_code})"
-            lines.append(f"Verify     : {text}")
-    else:
-        lines.append("Verify     : none")
-    lines.append(f"Trajectory : {result.trajectory_path}")
+def print_turn_result(result: AgentResult) -> None:
+    summary = result.turn_summary or result.summary or "-"
+    lines = ["Turn Summary", "", summary]
     print_box(lines)
+
+
+def summarize_step(step: int, action: Action | None, observation: Observation) -> str:
+    tool = action.tool if action else observation.tool
+    status = "成功" if observation.ok else "失败"
+    target = summarize_target(action)
+    detail = observation.message or first_line(observation.content, limit=80)
+
+    if observation.error_type == "TargetScopeViolation":
+        scope = observation.data.get("target_scope", "当前目标目录")
+        blocked = observation.data.get("blocked_path", target.strip() or "该路径")
+        return f"第 {step:02d} 步：我拦截了对 {blocked} 的访问，因为当前任务已锁定在 {scope}；下一步应回到目标目录内行动。"
+    if tool == "parser":
+        return f"第 {step:02d} 步：模型输出没有通过动作格式解析，本步执行失败，原因是 {detail or '格式不合法'}。"
+    if tool == "list_dir":
+        return f"第 {step:02d} 步：我查看了目录{target}，执行{status}，接下来可以根据目录结构选择相关文件。"
+    if tool == "read_file":
+        return f"第 {step:02d} 步：我读取了文件{target}，执行{status}，把看到的内容作为下一步判断依据。"
+    if tool == "search":
+        return f"第 {step:02d} 步：我在工作区中检索了目标信息{target}，执行{status}，用于定位相关代码或测试。"
+    if tool == "write_file":
+        return f"第 {step:02d} 步：我写入了文件{target}，执行{status}，这一步产生了新的文件内容。"
+    if tool == "append_file":
+        return f"第 {step:02d} 步：我向文件{target} 追加了内容，执行{status}，这一步用于分块完成较大的文件。"
+    if tool == "replace_in_file":
+        return f"第 {step:02d} 步：我对文件{target}做了精确替换，执行{status}，这一步用于修复已有代码。"
+    if tool == "run_shell":
+        if observation.error_type == "UseReadFile":
+            return f"第 {step:02d} 步：我拒绝了这条 shell 命令{target}，因为它看起来是在读取文件内容；下一步应该改用 read_file。"
+        return f"第 {step:02d} 步：我运行了验证命令{target}，执行{status}，命令输出将用于判断任务是否完成。"
+    if tool == "finish":
+        return f"第 {step:02d} 步：模型提交了最终结果，执行{status}，本轮任务进入收尾阶段。"
+    return f"第 {step:02d} 步：我调用了 {tool} 工具，执行{status}。"
+
+
+def summarize_target(action: Action | None) -> str:
+    if not action:
+        return ""
+    if "path" in action.args:
+        return f" {action.args['path']}"
+    if "command" in action.args:
+        return f" {action.args['command']}"
+    if "pattern" in action.args:
+        return f" {action.args['pattern']}"
+    return ""
 
 
 def save_plan_result(summary: str, workspace: Path, output_dir: Path, task: str) -> Path:
@@ -274,7 +399,7 @@ def print_box(lines: list[str], indent: int = 0, border: str = "single") -> None
     for raw_line in lines:
         wrapped_lines = wrap_box_line(raw_line, content_width)
         for line in wrapped_lines:
-            if raw_line in BANNER_LINES or raw_line in {"Run Mode", "Result", "Mini Coding Agent"}:
+            if raw_line in BANNER_LINES or raw_line in {"Run Mode", "Turn Summary", "Mini Coding Agent"}:
                 line = center_visual(line, content_width)
             print(prefix + vertical + " " + pad_visual(line, content_width) + " " + vertical)
     print(prefix + bottom_left + horizontal * inner_width + bottom_right)
@@ -282,7 +407,7 @@ def print_box(lines: list[str], indent: int = 0, border: str = "single") -> None
 
 
 def wrap_box_line(text: str, width: int) -> list[str]:
-    if text == "" or text in BANNER_LINES or text in {"Run Mode", "Result", "Mini Coding Agent"}:
+    if text == "" or text in BANNER_LINES or text in {"Run Mode", "Turn Summary", "Mini Coding Agent"}:
         return wrap_visual(text, width)
 
     separator_index = text.find(": ")

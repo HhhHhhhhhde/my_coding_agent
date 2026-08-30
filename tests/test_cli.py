@@ -1,6 +1,7 @@
 from pathlib import Path
 
-from mini_agent.cli import is_exit_command, save_plan_result, wrap_box_line, wrap_visual
+from mini_agent.cli import is_exit_command, is_session_command, save_plan_result, summarize_step, wrap_box_line, wrap_visual
+from mini_agent.protocol import Action, Observation
 
 
 def test_wrap_visual_accounts_for_wide_characters() -> None:
@@ -34,3 +35,60 @@ def test_exit_commands_are_recognized_case_insensitively() -> None:
     assert is_exit_command("Q")
     assert is_exit_command(" quit ")
     assert not is_exit_command("build")
+
+
+def test_session_commands_are_recognized_by_slash_prefix() -> None:
+    assert is_session_command("/clear")
+    assert is_session_command("/mode plan")
+    assert is_session_command("/unknown")
+    assert not is_session_command("clear")
+
+
+def test_step_summary_is_continuous_chinese_text() -> None:
+    text = summarize_step(
+        1,
+        Action("read", "read_file", {"path": "calculator.py"}),
+        Observation(True, "read_file", content="1: def add(a, b):"),
+    )
+
+    assert text.startswith("第 01 步：")
+    assert "我读取了文件 calculator.py" in text
+    assert text.endswith("。")
+
+
+def test_step_summary_explains_rejected_shell_file_read() -> None:
+    text = summarize_step(
+        10,
+        Action("read", "run_shell", {"command": "Get-Content sample.py"}),
+        Observation(False, "run_shell", error_type="UseReadFile", message="Use read_file instead."),
+    )
+
+    assert "我拒绝了这条 shell 命令" in text
+    assert "改用 read_file" in text
+
+
+def test_step_summary_describes_append_file() -> None:
+    text = summarize_step(
+        3,
+        Action("append", "append_file", {"path": "runner_game.py"}),
+        Observation(True, "append_file", content="Appended"),
+    )
+
+    assert "我向文件 runner_game.py 追加了内容" in text
+    assert "分块完成较大的文件" in text
+
+
+def test_step_summary_describes_target_scope_violation() -> None:
+    text = summarize_step(
+        7,
+        Action("inspect", "read_file", {"path": "pyproject.toml"}),
+        Observation(
+            False,
+            "target_scope",
+            error_type="TargetScopeViolation",
+            data={"target_scope": "examples/demo_runner_game", "blocked_path": "pyproject.toml"},
+        ),
+    )
+
+    assert "我拦截了对 pyproject.toml 的访问" in text
+    assert "examples/demo_runner_game" in text

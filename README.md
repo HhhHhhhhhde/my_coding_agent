@@ -68,6 +68,28 @@ User / CLI
 
 先复制 `.env.example` 为本地 `.env`，并填入自己的 API key。`.env` 不会入库。
 
+如果模型响应长时间没有返回，可以通过 `.env` 调整单次 LLM 请求超时：
+
+```env
+AGENT_LLM_TIMEOUT_SECONDS=60
+```
+
+如果模型在生成较大代码文件时等待过久，可以限制单次模型输出长度，让 agent 按步骤分块写入：
+
+```env
+AGENT_LLM_MAX_TOKENS=5000
+```
+
+较大的新文件会按 `write_file` + `append_file` 分块生成，每次大约 60-100 行代码。
+
+如果 OpenAI-compatible 网关偶发返回空内容，可以配置同一步内的空响应重试次数：
+
+```env
+AGENT_LLM_EMPTY_RESPONSE_RETRIES=2
+```
+
+如果诊断日志显示 `finish_reason=length` 且 `reasoning_tokens` 接近 `AGENT_LLM_MAX_TOKENS`，说明模型把输出预算花在内部思考上了。agent 会在空响应重试时临时提高本次请求的 `max_tokens`，并追加短提示要求模型直接返回一个小 JSON action。
+
 普通命令模式：
 
 ```bash
@@ -80,7 +102,20 @@ uv run python -m mini_agent --workspace examples/demo_calculator --max-steps 20 
 uv run python -m mini_agent -i
 ```
 
-交互模式会连续运行：每轮任务结束后可以继续输入新任务，或输入 `q`、`quit`、`exit` 退出。
+交互模式会连续运行：每轮任务结束后会输出由 LLM 生成的一段中文 Turn Summary，然后可以继续输入新任务，或输入 `q`、`quit`、`exit` 退出。
+
+交互模式支持轻量会话命令：
+
+```text
+/summary        查看上一轮任务总结
+/history        查看最近几轮任务摘要
+/clear          清空会话上下文
+/mode build     切换到 build 模式
+/mode plan      切换到 plan 模式
+/workspace PATH 切换工作区
+/maxsteps N     设置最大步数
+/help           查看命令列表
+```
 
 也可以使用安装后的脚本入口：
 

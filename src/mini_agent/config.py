@@ -10,6 +10,9 @@ class Config:
     api_key: str
     base_url: str | None
     model: str
+    llm_timeout_seconds: float
+    llm_max_tokens: int
+    llm_empty_response_retries: int
 
 
 def load_dotenv(path: Path) -> None:
@@ -34,4 +37,29 @@ def load_config(model_override: str | None = None) -> Config:
         api_key=api_key,
         base_url=os.getenv("OPENAI_BASE_URL") or None,
         model=model_override or os.getenv("AGENT_MODEL", "gpt-4.1-mini"),
+        llm_timeout_seconds=parse_float_env("AGENT_LLM_TIMEOUT_SECONDS", 60.0),
+        llm_max_tokens=parse_int_env("AGENT_LLM_MAX_TOKENS", 5000),
+        llm_empty_response_retries=parse_int_env("AGENT_LLM_EMPTY_RESPONSE_RETRIES", 2),
     )
+
+
+def parse_float_env(name: str, default: float) -> float:
+    value = os.getenv(name)
+    if not value:
+        return default
+    try:
+        parsed = float(value)
+    except ValueError:
+        return default
+    return parsed if parsed > 0 else default
+
+
+def parse_int_env(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if not value:
+        return default
+    try:
+        parsed = int(value)
+    except ValueError:
+        return default
+    return parsed if parsed > 0 else default

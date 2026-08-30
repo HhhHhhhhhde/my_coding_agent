@@ -45,6 +45,8 @@ def test_write_file_accepts_content_lines(tmp_path: Path) -> None:
     )
 
     assert result.ok
+    assert result.data["line_count"] == 2
+    assert result.data["next_write_tool"] == "append_file"
     assert (tmp_path / "multi.py").read_text(encoding="utf-8") == "def value():\n    return 42\n"
 
 
@@ -68,6 +70,64 @@ def test_write_file_requires_one_content_form(tmp_path: Path) -> None:
 
     assert not result.ok
     assert result.error_type == "ValueError"
+
+
+def test_write_file_rejects_more_than_100_lines(tmp_path: Path) -> None:
+    registry = build_default_registry(make_context(tmp_path))
+    lines = [f"line {index}" for index in range(101)]
+
+    result = registry.execute(Action("write", "write_file", {"path": "large.py", "content_lines": lines}))
+
+    assert not result.ok
+    assert result.error_type == "WriteChunkTooLarge"
+    assert result.data["max_lines"] == 100
+    assert not (tmp_path / "large.py").exists()
+
+
+def test_write_file_accepts_100_lines(tmp_path: Path) -> None:
+    registry = build_default_registry(make_context(tmp_path))
+    lines = [f"line {index}" for index in range(100)]
+
+    result = registry.execute(Action("write", "write_file", {"path": "chunk.py", "content_lines": lines}))
+
+    assert result.ok
+    assert result.data["line_count"] == 100
+    assert len((tmp_path / "chunk.py").read_text(encoding="utf-8").splitlines()) == 100
+
+
+def test_append_file_adds_content_without_overwriting(tmp_path: Path) -> None:
+    registry = build_default_registry(make_context(tmp_path))
+    target = tmp_path / "story.txt"
+    target.write_text("first\n", encoding="utf-8")
+
+    result = registry.execute(Action("append", "append_file", {"path": "story.txt", "content_lines": ["second"]}))
+
+    assert result.ok
+    assert result.data["line_count"] == 1
+    assert result.data["next_write_tool"] == "append_file"
+    assert target.read_text(encoding="utf-8") == "first\nsecond\n"
+
+
+def test_append_file_rejects_more_than_100_lines(tmp_path: Path) -> None:
+    registry = build_default_registry(make_context(tmp_path))
+    target = tmp_path / "story.txt"
+    target.write_text("first\n", encoding="utf-8")
+    lines = [f"line {index}" for index in range(101)]
+
+    result = registry.execute(Action("append", "append_file", {"path": "story.txt", "content_lines": lines}))
+
+    assert not result.ok
+    assert result.error_type == "WriteChunkTooLarge"
+    assert target.read_text(encoding="utf-8") == "first\n"
+
+
+def test_plan_mode_does_not_expose_append_file(tmp_path: Path) -> None:
+    registry = build_default_registry(make_context(tmp_path), mode="plan")
+
+    result = registry.execute(Action("append", "append_file", {"path": "x.txt", "content": "x"}))
+
+    assert not result.ok
+    assert result.error_type == "UnknownTool"
 
 
 def test_search_ignores_trajectories(tmp_path: Path) -> None:
@@ -111,3 +171,15 @@ def test_run_shell_records_verification(tmp_path: Path) -> None:
     assert test_result.ok
     assert len(context.verification_records) == 1
     assert isinstance(context.verification_records[0], VerificationRecord)
+
+
+def test_run_shell_rejects_file_reading_commands(tmp_path: Path) -> None:
+    (tmp_path / "sample.py").write_text("value = 1\n", encoding="utf-8")
+    context = make_context(tmp_path)
+    registry = build_default_registry(context)
+
+    result = registry.execute(Action("read through shell", "run_shell", {"command": "Get-Content sample.py"}))
+
+    assert not result.ok
+    assert result.error_type == "UseReadFile"
+    assert context.verification_records == []

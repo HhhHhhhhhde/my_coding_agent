@@ -66,6 +66,10 @@ class AgentState:
     workspace: str
     mode: str
     max_steps: int
+    session_context: str = ""
+    target_scope: str = ""
+    target_scope_reason: str = ""
+    working_notes: dict[str, str] = field(default_factory=dict)
     history: list[HistoryItem] = field(default_factory=list)
     modified_files: list[str] = field(default_factory=list)
     inspected_paths: list[str] = field(default_factory=list)
@@ -86,3 +90,4 @@ class AgentResult:
     verification_records: list[VerificationRecord]
     trajectory_path: str
     output_path: str | None = None
+    turn_summary: str = ""

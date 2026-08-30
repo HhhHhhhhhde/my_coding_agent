@@ -16,6 +16,7 @@ from .protocol import Action, Observation, VerificationRecord
 
 MAX_OBSERVATION_CHARS = 8000
 MAX_READ_LINES = 120
+MAX_WRITE_ACTION_LINES = 100
 MAX_SEARCH_RESULTS = 50
 DEFAULT_TIMEOUT_SECONDS = 30
 IGNORED_DIRS = {
@@ -175,10 +176,38 @@ def read_file(ctx: ToolContext, args: dict[str, Any]) -> Observation:
 def write_file(ctx: ToolContext, args: dict[str, Any]) -> Observation:
     path = ctx.resolve_path(require_string(args, "path"))
     content = file_content_from_args(args)
+    too_large = reject_large_write_chunk("write_file", content)
+    if too_large:
+        return too_large
+    line_count = count_content_lines(content)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
     ctx.remember_modified(path)
-    return Observation(True, "write_file", content=f"Wrote {ctx.relative_path(path)}", data={"path": ctx.relative_path(path)})
+    return Observation(
+        True,
+        "write_file",
+        content=f"Wrote {ctx.relative_path(path)} ({line_count} lines). Use append_file for the next chunk if more code is needed.",
+        data={"path": ctx.relative_path(path), "line_count": line_count, "next_write_tool": "append_file"},
+    )
+
+
+def append_file(ctx: ToolContext, args: dict[str, Any]) -> Observation:
+    path = ctx.resolve_path(require_string(args, "path"))
+    content = file_content_from_args(args)
+    too_large = reject_large_write_chunk("append_file", content)
+    if too_large:
+        return too_large
+    line_count = count_content_lines(content)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as file:
+        file.write(content)
+    ctx.remember_modified(path)
+    return Observation(
+        True,
+        "append_file",
+        content=f"Appended {line_count} lines to {ctx.relative_path(path)}. Continue with append_file if another chunk is needed.",
+        data={"path": ctx.relative_path(path), "line_count": line_count, "next_write_tool": "append_file"},
+    )
 
 
 def file_content_from_args(args: dict[str, Any]) -> str:
@@ -197,6 +226,30 @@ def file_content_from_args(args: dict[str, Any]) -> str:
             raise ValueError("Argument 'content_lines' must be a list of strings.")
         return "\n".join(lines) + "\n"
     return require_string(args, "content")
+
+
+def reject_large_write_chunk(tool: str, content: str) -> Observation | None:
+    line_count = count_content_lines(content)
+    if line_count <= MAX_WRITE_ACTION_LINES:
+        return None
+    message = (
+        f"One {tool} action can write at most {MAX_WRITE_ACTION_LINES} lines, "
+        f"but received {line_count}. Split the file into chunks and continue with append_file."
+    )
+    return Observation(
+        False,
+        tool,
+        error_type="WriteChunkTooLarge",
+        message=message,
+        content=message,
+        data={"line_count": line_count, "max_lines": MAX_WRITE_ACTION_LINES},
+    )
+
+
+def count_content_lines(content: str) -> int:
+    if not content:
+        return 0
+    return len(content.splitlines())
 
 
 def replace_in_file(ctx: ToolContext, args: dict[str, Any]) -> Observation:
@@ -259,6 +312,14 @@ def search(ctx: ToolContext, args: dict[str, Any]) -> Observation:
 
 def run_shell(ctx: ToolContext, args: dict[str, Any]) -> Observation:
     command = require_string(args, "command")
+    if looks_like_file_read_command(command):
+        return Observation(
+            False,
+            "run_shell",
+            error_type="UseReadFile",
+            message="Use read_file instead of shell commands to inspect file content.",
+            data={"command": command},
+        )
     timeout = optional_int(args, "timeout", DEFAULT_TIMEOUT_SECONDS)
     start = time.monotonic()
     shell_command = build_shell_command(command)
@@ -323,6 +384,20 @@ def looks_like_verification(command: str) -> bool:
     return any(keyword in lowered for keyword in keywords)
 
 
+def looks_like_file_read_command(command: str) -> bool:
+    lowered = command.lower()
+    blocked_patterns = [
+        r"\bget-content\b",
+        r"\bgc\b",
+        r"\bcat\b",
+        r"\btype\b",
+        r"\bhead\b",
+        r"\btail\b",
+        r"\bsed\s+-n\b",
+    ]
+    return any(re.search(pattern, lowered) for pattern in blocked_patterns)
+
+
 def finish(_ctx: ToolContext, args: dict[str, Any]) -> Observation:
     summary = args.get("summary", "")
     changed_files = args.get("changed_files", [])
@@ -345,7 +420,8 @@ def build_default_registry(context: ToolContext, mode: str = "build") -> ToolReg
     if mode == "plan":
         registry.register(Tool(ToolSpec("finish", "Finish the planning task with a summary.", {"summary": "Plan summary.", "changed_files": "Use an empty list.", "verification": "Use planning only."}), finish))
         return registry
-    registry.register(Tool(ToolSpec("write_file", "Create or overwrite a UTF-8 text file. Use content_base64 for code containing quotes, docstrings, or backslashes.", {"path": "File path.", "content": "Single string content.", "content_lines": "Optional list of simple lines.", "content_base64": "Optional single-line UTF-8 base64 content."}), write_file))
+    registry.register(Tool(ToolSpec("write_file", "Create or overwrite a UTF-8 text file. Each write action is limited to 100 lines. Use content_base64 for code containing quotes, docstrings, or backslashes.", {"path": "File path.", "content": "Single string content.", "content_lines": "Optional list of simple lines.", "content_base64": "Optional single-line UTF-8 base64 content."}), write_file))
+    registry.register(Tool(ToolSpec("append_file", "Append UTF-8 text to an existing or new file. Each append action is limited to 100 lines. Use this after write_file when generating a large file in chunks.", {"path": "File path.", "content": "Single string content.", "content_lines": "Optional list of simple lines.", "content_base64": "Optional single-line UTF-8 base64 content."}), append_file))
     registry.register(Tool(ToolSpec("replace_in_file", "Replace a unique text span in a file.", {"path": "File path.", "old": "Existing text.", "new": "Replacement text."}), replace_in_file))
     registry.register(Tool(ToolSpec("run_shell", f"Run a {shell_name()} command in the workspace. Prefer this for tests, not file discovery.", {"command": "Command to run.", "timeout": "Optional timeout seconds."}), run_shell))
     registry.register(Tool(ToolSpec("finish", "Finish the task with summary and verification.", {"summary": "What was done.", "changed_files": "Changed files.", "verification": "Verification result."}), finish))

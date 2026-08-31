@@ -1,5 +1,9 @@
 # Milestone 3: Reliability And Safety
 
+## 状态
+
+已完成首版实现。当前版本覆盖错误分类、retry hint、progress guard 升级、workspace/sensitive path 权限控制、shell 风险分级，以及 `needs_confirmation` 确认协议。
+
 ## 目标
 
 让 agent 从“能执行任务”升级为“失败后能恢复，并且不会静默执行高风险操作”。
@@ -56,6 +60,24 @@
 4. 重复格式错误不会无限循环。
 5. 替换失败时能给出可执行的 retry hint。
 6. 测试失败后 agent 会读取失败信息并尝试修复，而不是直接 finish。
+
+## 实现记录
+
+- 新增 `mini_agent.safety`，集中维护敏感路径识别和 shell 风险分类。
+- 文件工具在执行前检查 workspace 边界和敏感文件名，搜索会跳过敏感文件。
+- `write_file` 覆盖已有文件前返回 `needs_confirmation`，有宿主确认回调后才覆盖。
+- `run_shell` 将命令分为 `safe`、`review`、`blocked`：safe 直接执行，review 请求确认，blocked 直接拒绝。
+- parser、LLM、verification、permission、progress 错误现在有可见 taxonomy；原始细节保留在 observation data 中。
+- progress guard 增加重复 `search` pattern 检测。
+- CLI 在可交互终端中展示确认说明并询问用户；非交互模式不会静默执行 review 动作。
+
+## 验证
+
+```bash
+uv run pytest -q
+```
+
+结果：`90 passed`。
 
 ## 取舍原则
 

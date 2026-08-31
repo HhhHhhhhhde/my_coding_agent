@@ -43,6 +43,28 @@ def test_agent_loop_stops_after_parse_errors(tmp_path: Path) -> None:
     assert result.termination_reason == "too_many_errors"
 
 
+def test_parse_error_uses_taxonomy_and_keeps_parser_detail(tmp_path: Path) -> None:
+    seen_messages: list[list[dict[str, str]]] = []
+
+    class CapturingLLM(FakeLLM):
+        def complete(self, messages: list[dict[str, str]]) -> str:
+            seen_messages.append(messages)
+            return super().complete(messages)
+
+    llm = CapturingLLM(
+        [
+            "bad json",
+            '{"thought":"finish","action":{"tool":"finish","args":{"summary":"done","changed_files":[],"verification":"not needed"}}}',
+        ]
+    )
+
+    result = CodingAgent(llm=llm, workspace=tmp_path, max_steps=3).run("Do something.")
+
+    assert result.success
+    assert '"error_type": "ParserError"' in seen_messages[1][1]["content"]
+    assert '"parser_error_type": "InvalidJson"' in seen_messages[1][1]["content"]
+
+
 def test_parser_errors_include_retry_hint(tmp_path: Path) -> None:
     seen_messages: list[list[dict[str, str]]] = []
 
@@ -62,6 +84,43 @@ def test_parser_errors_include_retry_hint(tmp_path: Path) -> None:
 
     assert result.success
     assert "content_base64" in seen_messages[1][1]["content"]
+
+
+def test_llm_exception_uses_llm_error_taxonomy(tmp_path: Path) -> None:
+    class BrokenLLM:
+        def complete(self, _messages: list[dict[str, str]]) -> str:
+            raise RuntimeError("network down")
+
+    result = CodingAgent(llm=BrokenLLM(), workspace=tmp_path, max_steps=3).run("Do something.")
+
+    assert not result.success
+    assert result.termination_reason == "llm_error"
+
+    events = Path(result.trajectory_path).read_text(encoding="utf-8")
+    assert '"error_type": "LLMError"' in events
+    assert '"original_error_type": "RuntimeError"' in events
+
+
+def test_failed_verification_gets_retry_hint(tmp_path: Path) -> None:
+    seen_messages: list[list[dict[str, str]]] = []
+
+    class CapturingLLM(FakeLLM):
+        def complete(self, messages: list[dict[str, str]]) -> str:
+            seen_messages.append(messages)
+            return super().complete(messages)
+
+    llm = CapturingLLM(
+        [
+            '{"thought":"run tests","action":{"tool":"run_shell","args":{"command":"python -m pytest missing_test.py","timeout":5}}}',
+            '{"thought":"finish","action":{"tool":"finish","args":{"summary":"stopped","changed_files":[],"verification":"failed first"}}}',
+        ]
+    )
+
+    result = CodingAgent(llm=llm, workspace=tmp_path, max_steps=3).run("Run tests.")
+
+    assert result.success
+    assert '"error_type": "VerificationError"' in seen_messages[1][1]["content"]
+    assert "Read the failing command output" in seen_messages[1][1]["content"]
 
 
 def test_shell_file_read_errors_include_retry_hint(tmp_path: Path) -> None:

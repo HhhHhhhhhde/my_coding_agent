@@ -26,6 +26,17 @@ def apply_progress_guard(state: AgentState, action: Action, observation: Observa
                     "information you have and move to write_file, replace_in_file, a verification command, or finish."
                 ),
             )
+    elif action.tool == "search":
+        pattern = str(action.args.get("pattern", ""))
+        same_search_count = count_same_searches(state, path, pattern)
+        if same_search_count >= MAX_SAME_PATH_INSPECTIONS:
+            return progress_error(
+                "RepeatedSearch",
+                (
+                    f"You already searched for pattern {pattern!r} under {path!r}. Search a different pattern or "
+                    "move to read_file, write_file, replace_in_file, a verification command, or finish."
+                ),
+            )
     else:
         same_path_count = count_same_path_inspections(state, action.tool, path)
         if same_path_count >= MAX_SAME_PATH_INSPECTIONS:
@@ -75,6 +86,16 @@ def count_same_path_inspections(state: AgentState, tool: str, path: str) -> int:
 
 def count_tool_calls(state: AgentState, tool: str) -> int:
     return sum(1 for item in state.history if item.action and item.action.tool == tool)
+
+
+def count_same_searches(state: AgentState, path: str, pattern: str) -> int:
+    count = 0
+    for item in state.history:
+        if not item.action or item.action.tool != "search":
+            continue
+        if str(item.action.args.get("path", ".")) == path and str(item.action.args.get("pattern", "")) == pattern:
+            count += 1
+    return count
 
 
 def count_read_file_chunks(state: AgentState, path: str) -> int:

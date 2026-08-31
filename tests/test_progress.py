@@ -80,3 +80,20 @@ def test_progress_guard_still_blocks_many_different_file_reads() -> None:
 
     assert not guarded.ok
     assert guarded.error_type == "ExplorationBudgetExceeded"
+
+
+def test_progress_guard_blocks_repeated_search_pattern() -> None:
+    state = AgentState("Search duplicate", ".", "build", 20)
+    for step in range(1, 3):
+        action = Action("search", "search", {"pattern": "needle", "path": "."})
+        state.history.append(HistoryItem(step, "{}", action, Observation(True, "search")))
+        state.exploration_streak += 1
+
+    repeated = Action("search again", "search", {"pattern": "needle", "path": "."})
+    observation = Observation(True, "search", content="No matches found.")
+
+    guarded = apply_progress_guard(state, repeated, observation)
+
+    assert not guarded.ok
+    assert guarded.error_type == "RepeatedSearch"
+    assert "needle" in guarded.message

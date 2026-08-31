@@ -5,15 +5,17 @@
 1. Milestone 1: MVP Agent Loop
    - 目标：跑通自研 coding agent 的最小闭环。
    - 关键词：CLI、LLM client、JSON action、tools、agent loop、trajectory。
-   - 状态：已完成基础版本。
+   - 状态：已完成。
 
 2. Milestone 2: Context Management
    - 目标：让连续交互具备会话感，并管理上下文预算。
    - 关键词：session state、session context、`/clear`、history、context priority。
+   - 状态：已完成首版。
 
 3. Milestone 3: Reliability And Safety
    - 目标：让 agent 失败后能恢复，并具备明确权限边界。
    - 关键词：error taxonomy、retry policy、progress guard、permission control、confirmation。
+   - 状态：已完成首版。
 
 4. Milestone 4: Observability And Knowledge
    - 目标：让行为可复盘、可解释，并利用历史任务经验。
@@ -30,4 +32,4 @@
 
 ## Current Priority
 
-下一阶段优先实现 Milestone 2。连续执行已经有了交互入口，接下来要让连续执行拥有 session context，而不是每轮任务都完全失忆。
+下一阶段优先进入 Milestone 4 和考核交付收尾。代码侧重点是把 JSONL 轨迹转成人类可读报告，并补齐轻量 run index；交付侧重点是准备 1000 汉字以内的 README.txt、2 分钟演示脚本和稳定 demo 命令。Repo map、apply_patch 工具和更严格的验证门禁作为后续加分项排期。

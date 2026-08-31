@@ -17,6 +17,7 @@ from .tools import ToolContext, build_default_registry
 MAX_CONSECUTIVE_ERRORS = 3
 StepCallback = Callable[[int, Action | None, Observation], None]
 ThinkingCallback = Callable[[int], None]
+ConfirmationCallback = Callable[[Observation], bool]
 
 
 class CodingAgent:
@@ -28,6 +29,7 @@ class CodingAgent:
         mode: str = "build",
         on_step: StepCallback | None = None,
         on_thinking: ThinkingCallback | None = None,
+        on_confirmation: ConfirmationCallback | None = None,
     ) -> None:
         self.llm = llm
         self.workspace = workspace.resolve()
@@ -35,6 +37,7 @@ class CodingAgent:
         self.mode = mode
         self.on_step = on_step
         self.on_thinking = on_thinking
+        self.on_confirmation = on_confirmation
 
     def run(self, user_task: str, session_context: str = "") -> AgentResult:
         target_scope, target_scope_reason = infer_initial_target_scope(user_task, self.workspace)
@@ -61,6 +64,7 @@ class CodingAgent:
             modified_files=state.modified_files,
             inspected_paths=state.inspected_paths,
             verification_records=state.verification_records,
+            confirmation_callback=self.on_confirmation,
         )
         registry = build_default_registry(tool_context, mode=self.mode)
 
@@ -77,7 +81,13 @@ class CodingAgent:
                 llm_duration = time.monotonic() - llm_started_at
             except Exception as exc:
                 llm_duration = time.monotonic() - llm_started_at if "llm_started_at" in locals() else 0.0
-                observation = Observation(False, "llm", error_type=type(exc).__name__, message=str(exc))
+                observation = Observation(
+                    False,
+                    "llm",
+                    error_type="LLMError",
+                    message=str(exc),
+                    data={"original_error_type": type(exc).__name__},
+                )
                 logger.record_step(
                     step,
                     "",
@@ -94,8 +104,9 @@ class CodingAgent:
                 observation = Observation(
                     False,
                     "parser",
-                    error_type=parsed.error_type or "ParseError",
+                    error_type="ParserError",
                     message=parsed.message or "Could not parse model response.",
+                    data={"parser_error_type": parsed.error_type or "ParseError"},
                 )
                 observation = add_retry_hint(observation)
                 action = None

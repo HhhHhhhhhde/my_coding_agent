@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .protocol import Action, Observation, VerificationRecord
+from .safety import classify_shell_command, is_path_inside_workspace, is_sensitive_path
 
 
 MAX_OBSERVATION_CHARS = 8000
@@ -46,12 +47,27 @@ class ToolContext:
     modified_files: list[str]
     inspected_paths: list[str]
     verification_records: list[VerificationRecord]
+    confirmation_callback: Callable[[Observation], bool] | None = None
 
     def resolve_path(self, path: str | os.PathLike[str]) -> Path:
         candidate = Path(path)
         if not candidate.is_absolute():
             candidate = self.workspace / candidate
         return candidate.resolve()
+
+    def check_path_permission(self, path: Path, tool: str, access: str) -> Observation | None:
+        if not is_path_inside_workspace(path, self.workspace):
+            message = f"Permission denied: {ctx_path(path)} is outside workspace {self.workspace}."
+            return Observation(False, tool, content=message, error_type="PermissionError", message=message)
+        if is_sensitive_path(path):
+            message = f"Permission denied: {self.relative_path(path)} looks like a sensitive {access} target."
+            return Observation(False, tool, content=message, error_type="PermissionError", message=message)
+        return None
+
+    def request_confirmation(self, observation: Observation) -> Observation | None:
+        if self.confirmation_callback and self.confirmation_callback(observation):
+            return None
+        return observation
 
     def relative_path(self, path: Path) -> str:
         try:
@@ -84,6 +100,10 @@ def truncate_text(text: str, limit: int = MAX_OBSERVATION_CHARS) -> tuple[str, b
         return text, False
     half = max(1, limit // 2)
     return text[:half] + "\n... [truncated] ...\n" + text[-half:], True
+
+
+def ctx_path(path: Path) -> str:
+    return str(path.resolve())
 
 
 def require_string(args: dict[str, Any], key: str) -> str:
@@ -133,6 +153,9 @@ class ToolRegistry:
 
 def list_dir(ctx: ToolContext, args: dict[str, Any]) -> Observation:
     path = ctx.resolve_path(require_string(args, "path"))
+    denied = ctx.check_path_permission(path, "list_dir", "directory listing")
+    if denied:
+        return denied
     ctx.remember_inspected(path)
     if not path.exists():
         return Observation(False, "list_dir", error_type="NotFound", message=f"Path does not exist: {ctx.relative_path(path)}")
@@ -149,6 +172,9 @@ def list_dir(ctx: ToolContext, args: dict[str, Any]) -> Observation:
 
 def read_file(ctx: ToolContext, args: dict[str, Any]) -> Observation:
     path = ctx.resolve_path(require_string(args, "path"))
+    denied = ctx.check_path_permission(path, "read_file", "read")
+    if denied:
+        return denied
     ctx.remember_inspected(path)
     start = max(1, optional_int(args, "start", 1))
     end = optional_int(args, "end", start + MAX_READ_LINES - 1)
@@ -175,6 +201,19 @@ def read_file(ctx: ToolContext, args: dict[str, Any]) -> Observation:
 
 def write_file(ctx: ToolContext, args: dict[str, Any]) -> Observation:
     path = ctx.resolve_path(require_string(args, "path"))
+    denied = ctx.check_path_permission(path, "write_file", "write")
+    if denied:
+        return denied
+    if path.exists():
+        confirmation = confirmation_observation(
+            "write_file",
+            "OverwriteFile",
+            f"write_file would overwrite existing file {ctx.relative_path(path)}.",
+            {"path": ctx.relative_path(path)},
+        )
+        pending = ctx.request_confirmation(confirmation)
+        if pending:
+            return pending
     content = file_content_from_args(args)
     too_large = reject_large_write_chunk("write_file", content)
     if too_large:
@@ -193,6 +232,9 @@ def write_file(ctx: ToolContext, args: dict[str, Any]) -> Observation:
 
 def append_file(ctx: ToolContext, args: dict[str, Any]) -> Observation:
     path = ctx.resolve_path(require_string(args, "path"))
+    denied = ctx.check_path_permission(path, "append_file", "write")
+    if denied:
+        return denied
     content = file_content_from_args(args)
     too_large = reject_large_write_chunk("append_file", content)
     if too_large:
@@ -254,6 +296,9 @@ def count_content_lines(content: str) -> int:
 
 def replace_in_file(ctx: ToolContext, args: dict[str, Any]) -> Observation:
     path = ctx.resolve_path(require_string(args, "path"))
+    denied = ctx.check_path_permission(path, "replace_in_file", "write")
+    if denied:
+        return denied
     old = require_string(args, "old")
     new = require_string(args, "new")
     if not path.exists() or not path.is_file():
@@ -276,6 +321,9 @@ def replace_in_file(ctx: ToolContext, args: dict[str, Any]) -> Observation:
 def search(ctx: ToolContext, args: dict[str, Any]) -> Observation:
     pattern = require_string(args, "pattern")
     root = ctx.resolve_path(args.get("path", "."))
+    denied = ctx.check_path_permission(root, "search", "search")
+    if denied:
+        return denied
     ctx.remember_inspected(root)
     if not root.exists():
         return Observation(False, "search", error_type="NotFound", message=f"Path does not exist: {ctx.relative_path(root)}")
@@ -288,7 +336,7 @@ def search(ctx: ToolContext, args: dict[str, Any]) -> Observation:
     files = [root] if root.is_file() else [
         path
         for path in root.rglob("*")
-        if path.is_file() and not any(part in IGNORED_DIRS for part in path.parts)
+        if path.is_file() and not any(part in IGNORED_DIRS for part in path.parts) and not is_sensitive_path(path)
     ]
 
     results: list[str] = []
@@ -320,6 +368,27 @@ def run_shell(ctx: ToolContext, args: dict[str, Any]) -> Observation:
             message="Use read_file instead of shell commands to inspect file content.",
             data={"command": command},
         )
+    risk = classify_shell_command(command)
+    if risk.level == "blocked":
+        message = f"Blocked shell command: {risk.reason}."
+        return Observation(
+            False,
+            "run_shell",
+            content=message,
+            error_type="PermissionError",
+            message=message,
+            data={"command": command, "risk_level": risk.level, "risk_reason": risk.reason},
+        )
+    if risk.level == "review":
+        confirmation = confirmation_observation(
+            "run_shell",
+            "ShellCommandRequiresConfirmation",
+            f"Shell command requires confirmation: {risk.reason}.",
+            {"command": command, "risk_level": risk.level, "risk_reason": risk.reason},
+        )
+        pending = ctx.request_confirmation(confirmation)
+        if pending:
+            return pending
     timeout = optional_int(args, "timeout", DEFAULT_TIMEOUT_SECONDS)
     start = time.monotonic()
     shell_command = build_shell_command(command)
@@ -352,19 +421,47 @@ def run_shell(ctx: ToolContext, args: dict[str, Any]) -> Observation:
     content = f"exit_code: {completed.returncode}\nduration: {duration:.2f}s\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}"
     content, content_truncated = truncate_text(content)
 
-    if looks_like_verification(command):
+    is_verification = looks_like_verification(command)
+    if is_verification:
         ctx.verification_records.append(
             VerificationRecord(command=command, exit_code=completed.returncode, passed=completed.returncode == 0)
+        )
+    error_type = None
+    message = None
+    if completed.returncode != 0:
+        error_type = "VerificationError" if is_verification else "CommandFailed"
+        message = (
+            f"Verification command exited with {completed.returncode}."
+            if is_verification
+            else f"Command exited with {completed.returncode}."
         )
 
     return Observation(
         completed.returncode == 0,
         "run_shell",
         content=content,
-        error_type=None if completed.returncode == 0 else "CommandFailed",
-        message=None if completed.returncode == 0 else f"Command exited with {completed.returncode}.",
+        error_type=error_type,
+        message=message,
         truncated=stdout_truncated or stderr_truncated or content_truncated,
-        data={"command": command, "shell": shell_name(), "exit_code": completed.returncode, "duration": duration},
+        data={
+            "command": command,
+            "shell": shell_name(),
+            "exit_code": completed.returncode,
+            "duration": duration,
+            "risk_level": risk.level,
+        },
+    )
+
+
+def confirmation_observation(tool: str, error_type: str, message: str, data: dict[str, Any]) -> Observation:
+    return Observation(
+        False,
+        tool,
+        content=message,
+        error_type=error_type,
+        message=message,
+        needs_confirmation=True,
+        data={"needs_confirmation": True, **data},
     )
 
 

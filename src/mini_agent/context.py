@@ -64,6 +64,10 @@ Behavior rules:
 - Do not inspect the same path repeatedly unless a tool observation shows it changed or failed.
 - If progress_guard reports RepeatedInspection or ExplorationBudgetExceeded, stop exploring and immediately write, run tests, or finish.
 - Prefer relative paths inside the workspace.
+- File tools may only access paths inside the workspace.
+- Do not read or write .env, key, token, credential, password, or secret files.
+- If a tool observation has needs_confirmation=true, the action was not executed. Do not claim it ran.
+- User confirmation is handled by the host CLI, not by model output. Do not add a "confirmed" argument or try to self-approve.
 - Prefer list_dir and search for file discovery. Do not use shell commands like find/head/Get-ChildItem just to locate files.
 - Do not use run_shell to read file contents. Never call Get-Content, cat, type, head, tail, or sed through run_shell for inspection; use read_file with start/end instead.
 - Prefer replace_in_file for small edits and write_file for new files.
@@ -80,6 +84,8 @@ Behavior rules:
 - When writing code containing quotes, docstrings, backslashes, or many lines, use "content_base64" as one single-line UTF-8 base64 string.
 - Do not put triple-quoted strings inside content_lines. If a parser InvalidJson error happens while writing a file, retry with content_base64.
 - Use run_shell only for verification commands, builds, linters, or small checks, for example python -m pytest -q.
+- Shell commands are risk-classified: safe commands run, review commands require user confirmation, and blocked commands are refused.
+- Do not run delete, recursive Remove-Item/rm, git history rewrite, forced push, or sensitive-file commands.
 - On Windows, run_shell executes commands through PowerShell. On Unix-like systems, it executes through sh.
 - If a tool fails, use the observation to recover.
 

@@ -15,7 +15,10 @@ def add_retry_hint(observation: Observation, action: Action | None = None) -> Ob
 
 
 def retry_hint_for(observation: Observation, action: Action | None = None) -> str:
-    if observation.tool == "parser" and observation.error_type == "InvalidJson":
+    if observation.needs_confirmation:
+        return "Wait for user confirmation or choose a lower-risk alternative. Do not self-confirm in JSON."
+    parser_error_type = observation.data.get("parser_error_type")
+    if observation.tool == "parser" and parser_error_type == "InvalidJson":
         return (
             "Retry with exactly one valid JSON object. If the previous response was long or truncated, write a "
             "smaller 40-80 line chunk only. If you were writing code, avoid raw quotes/docstrings inside JSON "
@@ -37,6 +40,10 @@ def retry_hint_for(observation: Observation, action: Action | None = None) -> st
             "Split the file into chunks of at most 100 lines. Use write_file for the first chunk, then append_file "
             "for later chunks, and keep each action small."
         )
+    if observation.error_type == "PermissionError":
+        return "Retry with an allowed path inside the workspace and avoid sensitive files or blocked shell commands."
+    if observation.tool == "run_shell" and observation.error_type == "VerificationError":
+        return "Read the failing command output and relevant source or tests, then make a focused fix before running verification again."
     if action and action.tool in {"write_file", "append_file"}:
         return f"Retry {action.tool} with either content, content_lines, or content_base64."
     return ""

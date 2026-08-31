@@ -67,6 +67,7 @@ def run_single_task(args: argparse.Namespace, config: object, session_context: s
         mode=args.mode,
         on_step=print_step,
         on_thinking=print_thinking,
+        on_confirmation=confirm_tool_action if sys.stdin.isatty() else None,
     )
     result = agent.run(args.task, session_context=session_context)
     if args.mode == "plan" and result.summary:
@@ -358,6 +359,21 @@ def print_step(step: int, action: Action | None, observation: Observation) -> No
     print(clear_line + "  " + summarize_step(step, action, observation))
 
 
+def confirm_tool_action(observation: Observation) -> bool:
+    print()
+    print_box(
+        [
+            "Confirmation",
+            "",
+            observation.message or observation.content or "This action requires confirmation.",
+            f"Tool      : {observation.tool}",
+            f"Risk      : {observation.data.get('risk_reason', observation.error_type or 'review required')}",
+        ]
+    )
+    answer = input("  Allow this action? [y/N]\n  > ").strip().lower()
+    return answer in {"y", "yes"}
+
+
 def print_thinking(step: int) -> None:
     print(f"  · step {step:02d}  Thinking... waiting for model response", end="", flush=True)
 
@@ -378,6 +394,10 @@ def summarize_step(step: int, action: Action | None, observation: Observation) -
         scope = observation.data.get("target_scope", "当前目标目录")
         blocked = observation.data.get("blocked_path", target.strip() or "该路径")
         return f"第 {step:02d} 步：我拦截了对 {blocked} 的访问，因为当前任务已锁定在 {scope}；下一步应回到目标目录内行动。"
+    if observation.needs_confirmation:
+        return f"第 {step:02d} 步：{tool} 请求执行需要确认的操作{target}，已暂停执行并等待用户确认。"
+    if observation.error_type == "PermissionError":
+        return f"第 {step:02d} 步：我拒绝了 {tool} 操作{target}，原因是 {detail or '权限策略不允许'}。"
     if tool == "parser":
         return f"第 {step:02d} 步：模型输出没有通过动作格式解析，本步执行失败，原因是 {detail or '格式不合法'}。"
     if tool == "list_dir":

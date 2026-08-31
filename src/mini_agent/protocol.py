@@ -27,6 +27,7 @@ class Observation:
     error_type: str | None = None
     message: str | None = None
     truncated: bool = False
+    needs_confirmation: bool = False
     data: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -40,6 +41,8 @@ class Observation:
             result["error_type"] = self.error_type
         if self.message:
             result["message"] = self.message
+        if self.needs_confirmation:
+            result["needs_confirmation"] = True
         if self.data:
             result["data"] = self.data
         return result

@@ -2,7 +2,7 @@
 
 一个从零实现的编程智能体项目。它的目标是通过与大语言模型交互，在本地工作区内自主读取文件、搜索代码、修改文件、执行命令，并根据运行结果持续迭代，完成真实编程任务。
 
-本项目已完成 Milestone 1 的基础链路：CLI、LLM 接入、JSON action 解析、工具注册、文件工具、搜索工具、命令执行工具、agent loop、轨迹日志、demo 项目和离线测试。CLI 还提供了一个零依赖文字交互界面，用于启动后输入任务并选择 plan/build 模式。
+本项目已完成 Milestone 1-3 的主体能力：自研 agent loop、JSON action 协议、本地文件/搜索/命令工具、轨迹日志、Plan / Build 双模式、会话上下文、上下文压缩、错误恢复提示、progress guard、workspace 权限边界、敏感文件保护和 shell 风险控制。CLI 还提供了一个零依赖文字交互界面，用于启动后输入任务并选择 plan/build 模式。
 
 ## 题目约束
 
@@ -51,18 +51,20 @@ User / CLI
 - 文件创建和精确修改：已完成。
 - 本地命令执行：已完成。
 - 命令超时和输出截断：已完成。
+- 安全边界：已完成首版，包含 workspace 限制、敏感文件拒绝和 shell 风险分级。
 - 运行轨迹日志：已完成。
 - 完成总结和验证记录：已完成。
 
 ## 加分功能候选
 
-- Plan / Build 双模式：已完成轻量版。Plan 模式只注册读、搜和 finish，Build 模式允许修改和执行。
+- Plan / Build 双模式：已完成。Plan 模式只注册读、搜和 finish，Build 模式允许修改和执行。
+- 上下文压缩：已完成。保留最近步骤，压缩早期 observation，并保存重要说明文件工作笔记。
+- 高风险操作确认：已完成首版。覆盖已有文件、安装依赖、联网等 review 级操作会请求确认；危险命令直接拒绝。
+- 完整 safety policy：已完成首版。workspace 越界拒绝、敏感文件拒绝、危险 shell 命令治理。
 - 轻量 repo map：扫描项目文件树和关键符号，减少盲目读取。
 - apply_patch 编辑工具：用 patch 方式做更精确的代码修改。
 - 验证门禁：finish 前要求测试、构建或说明无法验证。
 - 轨迹回放：把 JSONL 运行日志转成人类可读报告。
-- 高风险操作确认：删除、覆盖、安装依赖等操作需要额外确认。
-- 完整 safety policy：workspace 越界拒绝、敏感文件拒绝、危险命令治理。
 
 ## 运行方式
 
@@ -117,6 +119,16 @@ uv run python -m mini_agent -i
 /help           查看命令列表
 ```
 
+安全机制简测：
+
+```bash
+uv run python -m mini_agent --workspace . --max-steps 3 "请读取 .env 文件内容"
+uv run python -m mini_agent --workspace . --max-steps 3 "请运行 git reset --hard HEAD"
+uv run python -m mini_agent -i
+```
+
+前两条应被权限策略拒绝；交互模式下安装依赖或覆盖已有文件会显示确认提示。
+
 也可以使用安装后的脚本入口：
 
 ```bash
@@ -132,8 +144,10 @@ uv run python -m mini_agent --mode plan --workspace examples/demo_task_manager "
 ## 测试
 
 ```bash
-uv run --extra dev pytest -q tests
+uv run pytest -q
 ```
+
+当前离线测试覆盖 agent loop、parser、工具协议、上下文管理、progress guard、target scope、session、CLI 展示和 milestone03 安全策略。
 
 当前 demo 项目故意包含一个失败测试，用于视频中展示 agent 从失败到修复的过程：
 
@@ -173,7 +187,7 @@ uv run python -m mini_agent --mode plan --workspace examples/plan_alarm_core_arc
 
 ## 计划
 
-第一阶段已完成基础链路和轻量 Plan / Build。第二阶段再补充完整 safety policy、git diff、验证门禁、repo map 和轨迹回放等加分功能。
+当前已完成 Milestone 1-3 的主体实现。下一阶段进入 Milestone 4 和交付收尾：补齐轨迹回放/报告、README.txt 精简版、演示脚本和可录屏 demo。
 
 详细计划见：
 

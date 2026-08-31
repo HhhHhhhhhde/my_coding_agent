@@ -449,6 +449,7 @@ def run_shell(ctx: ToolContext, args: dict[str, Any]) -> Observation:
             "exit_code": completed.returncode,
             "duration": duration,
             "risk_level": risk.level,
+            "is_verification": is_verification,
         },
     )
 
@@ -477,6 +478,8 @@ def shell_name() -> str:
 
 def looks_like_verification(command: str) -> bool:
     lowered = command.lower()
+    if classify_shell_command(command).level == "review":
+        return False
     keywords = ["test", "pytest", "unittest", "mvn", "gradle", "npm run", "pnpm test", "cargo test", "go test", "ruff", "mypy"]
     return any(keyword in lowered for keyword in keywords)
 

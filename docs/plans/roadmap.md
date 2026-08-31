@@ -20,6 +20,7 @@
 4. Milestone 4: Observability And Knowledge
    - 目标：让行为可复盘、可解释，并利用历史任务经验。
    - 关键词：structured logs、report、replay、run index、lightweight RAG。
+   - 状态：轨迹回放与 Markdown 报告已完成首版，run index 和 lightweight RAG 未实现。
 
 ## Design Principle
 
@@ -32,4 +33,4 @@
 
 ## Current Priority
 
-下一阶段优先进入 Milestone 4 和考核交付收尾。代码侧重点是把 JSONL 轨迹转成人类可读报告，并补齐轻量 run index；交付侧重点是准备 1000 汉字以内的 README.txt、2 分钟演示脚本和稳定 demo 命令。Repo map、apply_patch 工具和更严格的验证门禁作为后续加分项排期。
+下一阶段优先进入考核交付收尾：准备 1000 汉字以内的 README.txt、2 分钟演示脚本和稳定 demo 命令。Run index、lightweight RAG、Repo map、apply_patch 工具和更严格的验证门禁作为后续加分项排期。

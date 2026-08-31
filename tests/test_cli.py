@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from mini_agent.cli import (
@@ -5,17 +6,44 @@ from mini_agent.cli import (
     MODE_BOX_WIDTH,
     box_prefix,
     center_line,
+    format_run_list,
+    handle_session_command,
     is_context_dependent_task,
     is_exit_command,
     is_session_command,
+    print_replay_command,
     print_box,
     print_banner,
+    read_interactive_args,
     save_plan_result,
     summarize_step,
     wrap_box_line,
     wrap_visual,
 )
 from mini_agent.protocol import Action, Observation
+from mini_agent.session import SessionState
+
+
+def write_cli_jsonl(path: Path) -> None:
+    events = [
+        {
+            "type": "start",
+            "task": "Fix calculator",
+            "workspace": "demo",
+            "mode": "build",
+            "max_steps": 5,
+            "has_session_context": False,
+        },
+        {
+            "type": "step",
+            "step": 1,
+            "parsed_action": {"tool": "read_file", "args": {"path": "calculator.py"}},
+            "observation": {"ok": True, "tool": "read_file", "content": "1: def add(a, b):"},
+        },
+        {"type": "end", "termination_reason": "finished", "summary": "done", "success": True},
+    ]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(json.dumps(event) for event in events) + "\n", encoding="utf-8")
 
 
 def test_wrap_visual_accounts_for_wide_characters() -> None:
@@ -96,6 +124,56 @@ def test_session_commands_are_recognized_by_slash_prefix() -> None:
     assert is_session_command("/mode plan")
     assert is_session_command("/unknown")
     assert not is_session_command("clear")
+
+
+def test_format_run_list_shows_recent_trajectories(tmp_path: Path) -> None:
+    write_cli_jsonl(tmp_path / "trajectories" / "run-1.jsonl")
+
+    text = format_run_list(tmp_path)
+
+    assert "1. [success/build] Fix calculator" in text
+    assert "run-1.jsonl" in text
+
+
+def test_print_replay_command_renders_report(tmp_path: Path, capsys) -> None:
+    write_cli_jsonl(tmp_path / "trajectories" / "run-1.jsonl")
+
+    print_replay_command(tmp_path, "1")
+
+    output = capsys.readouterr().out
+    assert "Agent Run Report" in output
+    assert "Fix calculator" in output
+    assert "╭" not in output
+
+
+def test_runs_command_uses_wide_box(tmp_path: Path, capsys) -> None:
+    write_cli_jsonl(tmp_path / "trajectories" / "run-1.jsonl")
+    args = type("Args", (), {"workspace": str(tmp_path), "mode": "build"})()
+
+    handled = handle_session_command("/runs", args, SessionState())
+
+    output = capsys.readouterr().out
+    assert handled is False
+    assert "Run History" in output
+    assert "─" * (MODE_BOX_WIDTH - 2) in output
+
+
+def test_read_interactive_args_does_not_clear_screen(monkeypatch) -> None:
+    calls = 0
+
+    def fail_clear() -> None:
+        nonlocal calls
+        calls += 1
+
+    answers = iter(["q"])
+    monkeypatch.setattr("mini_agent.cli.clear_screen", fail_clear)
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
+    args = type("Args", (), {"task": "", "workspace": ".", "max_steps": 20, "mode": "build"})()
+
+    result = read_interactive_args(args)
+
+    assert result.task == "q"
+    assert calls == 0
 
 
 def test_context_dependent_tasks_are_recognized() -> None:

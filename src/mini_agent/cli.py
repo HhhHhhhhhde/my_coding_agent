@@ -14,6 +14,7 @@ from .config import load_config
 from .llm import LLMClient
 from .logger import append_turn_summary
 from .protocol import Action, AgentResult, Observation
+from .replay import list_trajectories, render_trajectory_report, resolve_trajectory
 from .session import SessionState, build_session_turn, format_turn_summary
 from .turn_summary import generate_turn_summary
 
@@ -40,6 +41,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-steps", type=int, default=20, help="Maximum agent loop steps.")
     parser.add_argument("--mode", choices=["plan", "build"], default="build", help="Run in planning or build mode.")
     parser.add_argument(
+        "--replay",
+        metavar="PATH",
+        help="Render a trajectory JSONL report. Use 'latest' for the newest workspace trajectory.",
+    )
+    parser.add_argument("--replay-output", default=None, help="Optional markdown path for --replay output.")
+    parser.add_argument(
         "--plan-output-dir",
         default="plans",
         help="Directory for plan-mode markdown output. Defaults to ./plans.",
@@ -49,11 +56,33 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.replay:
+        return run_replay(args)
     if args.interactive or not args.task:
         return run_interactive_session(args)
     config = load_config(args.model)
     result = run_single_task(args, config)
     return 0 if result.success else 1
+
+
+def run_replay(args: argparse.Namespace) -> int:
+    workspace = Path(args.workspace).resolve()
+    try:
+        trajectory_path = resolve_trajectory(workspace, args.replay)
+        report = render_trajectory_report(trajectory_path)
+        if args.replay_output:
+            output_path = Path(args.replay_output)
+            if not output_path.is_absolute():
+                output_path = workspace / output_path
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(report.markdown, encoding="utf-8")
+            print(f"Wrote replay report: {output_path}")
+        else:
+            print(report.markdown)
+    except Exception as exc:
+        print(f"Replay failed: {exc}", file=sys.stderr)
+        return 1
+    return 0
 
 
 def run_single_task(args: argparse.Namespace, config: object, session_context: str = "") -> AgentResult:
@@ -85,6 +114,7 @@ def run_interactive_session(args: argparse.Namespace) -> int:
     clear_screen()
     print_banner(args.mode)
     args.mode = choose_mode(args.mode)
+    print("  Enter task or command. Use /help for session commands. q/quit/exit to leave.")
 
     while True:
         args = read_interactive_args(args)
@@ -97,7 +127,6 @@ def run_interactive_session(args: argparse.Namespace) -> int:
         if is_session_command(args.task):
             if handle_session_command(args.task, args, session):
                 return 0
-            wait_for_enter()
             args.task = ""
             continue
 
@@ -112,7 +141,6 @@ def run_interactive_session(args: argparse.Namespace) -> int:
                     f"当前工作区仍是 {Path(args.workspace).resolve()}。",
                 ]
             )
-            wait_for_enter()
             args.task = ""
             continue
 
@@ -122,7 +150,7 @@ def run_interactive_session(args: argparse.Namespace) -> int:
         session.add_turn(turn)
         args.task = ""
         next_action = input(
-            "  Next: Enter=new task, b=build, p=plan, m=switch, /history, /clear, q=quit\n  > "
+            "  Next: Enter=new task, b=build, p=plan, m=switch, /history, /runs, /replay latest, /clear, q=quit\n  > "
         ).strip()
         if is_exit_command(next_action):
             print("  Bye.")
@@ -130,7 +158,6 @@ def run_interactive_session(args: argparse.Namespace) -> int:
         if is_session_command(next_action):
             if handle_session_command(next_action, args, session):
                 return 0
-            wait_for_enter()
             continue
         next_action = next_action.lower()
         if next_action in {"b", "build", "1"}:
@@ -142,9 +169,6 @@ def run_interactive_session(args: argparse.Namespace) -> int:
 
 
 def read_interactive_args(args: argparse.Namespace) -> argparse.Namespace:
-    clear_screen()
-    print_banner(args.mode)
-    print("  Enter task or command. Use /help for session commands. q/quit/exit to leave.")
     print()
     task = input_line("Task", args.task or "")
     args.task = task
@@ -201,6 +225,12 @@ def handle_session_command(command: str, args: argparse.Namespace, session: Sess
     if name == "/history":
         print_box(["Session History", "", session.history_text()])
         return False
+    if name == "/runs":
+        print_box(["Run History", "", format_run_list(Path(args.workspace).resolve())], width=MODE_BOX_WIDTH)
+        return False
+    if name == "/replay":
+        print_replay_command(Path(args.workspace).resolve(), value or "latest")
+        return False
     if name == "/mode":
         if value.lower() in {"build", "plan"}:
             args.mode = value.lower()
@@ -229,6 +259,10 @@ def handle_session_command(command: str, args: argparse.Namespace, session: Sess
                 "",
                 "/summary        查看上一轮任务总结",
                 "/history        查看最近几轮任务摘要",
+                "/runs           列出最近的轨迹日志",
+                "/replay latest  查看最新轨迹报告",
+                "/replay N       查看 /runs 中第 N 条轨迹",
+                "/replay PATH    查看指定 JSONL 轨迹",
                 "/clear          清空会话上下文",
                 "/mode build     切换到 build 模式",
                 "/mode plan      切换到 plan 模式",
@@ -241,6 +275,28 @@ def handle_session_command(command: str, args: argparse.Namespace, session: Sess
 
     print_box(["Session", "", "未知会话命令。使用 /help 查看可用命令。"])
     return False
+
+
+def format_run_list(workspace: Path, limit: int = 10) -> str:
+    items = list_trajectories(workspace, limit=limit)
+    if not items:
+        return f"未找到轨迹日志：{workspace / 'trajectories'}"
+    lines = []
+    for item in items:
+        lines.append(f"{item.index}. [{item.status}/{item.mode}] {clip(item.task, 44)}")
+        lines.append(f"   {item.path}")
+    return "\n".join(lines)
+
+
+def print_replay_command(workspace: Path, value: str) -> None:
+    try:
+        path = resolve_trajectory(workspace, value)
+        report = render_trajectory_report(path)
+    except Exception as exc:
+        print_box(["Replay", "", f"无法生成轨迹报告：{exc}"])
+        return
+    print()
+    print(report.markdown)
 
 
 def is_context_dependent_task(task: str) -> bool:

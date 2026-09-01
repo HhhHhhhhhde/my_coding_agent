@@ -2,7 +2,7 @@
 
 一个从零实现的编程智能体项目。它的目标是通过与大语言模型交互，在本地工作区内自主读取文件、搜索代码、修改文件、执行命令，并根据运行结果持续迭代，完成真实编程任务。
 
-本项目已完成 Milestone 1-3 的主体能力，并补充了 Milestone 4 的轨迹回放首版和轻量 skill 机制：自研 agent loop、JSON action 协议、本地文件/搜索/命令工具、轨迹日志、Markdown 报告、Plan / Build 双模式、会话上下文、上下文压缩、持久 skill 指令、错误恢复提示、progress guard、workspace 权限边界、敏感文件保护和 shell 风险控制。CLI 还提供了一个零依赖文字交互界面，用于启动后输入任务并选择 plan/build 模式。
+本项目已完成 Milestone 1-3 的主体能力，并补充了 Milestone 4 的轨迹回放首版和轻量 skill 机制：自研 agent loop、JSON action 协议、本地文件/搜索/命令工具、轨迹日志、Markdown 报告、Plan / Build 双模式、会话上下文、上下文压缩、持久 skill 指令、错误恢复提示、progress guard、workspace 权限边界、敏感文件保护和 shell 风险控制。CLI 还提供了一个零依赖文字交互界面，用于连续输入任务、切换模式、启停 skill、列出历史轨迹并回放某次运行。
 
 ## 题目约束
 
@@ -137,6 +137,13 @@ Skill 文件默认放在当前 workspace 的 `skills/<name>/SKILL.md`。启用�
 请新增一个 code-review skill，要求先列风险、再给修改建议，写到 skills/code-review/SKILL.md。
 ```
 
+内置示例 skill：
+
+- `skills/python-testing/SKILL.md`：偏向先读测试、最小修改、运行最小相关 pytest。
+- `skills/safety-review/SKILL.md`：偏向先识别风险、权限边界和验证点。
+- `skills/compact-planner/SKILL.md`：偏向输出短计划并快速收敛。
+- `skills/demo-skill/SKILL.md`：数学函数演示用，要求 `sin`/`cos` 用轻量多项式近似，便于确认 skill 确实注入。
+
 安全机制简测：
 
 ```bash
@@ -176,6 +183,8 @@ uv run pytest -q
 
 当前离线测试覆盖 agent loop、parser、工具协议、上下文管理、skill 注入、progress guard、target scope、session、CLI 展示、milestone03 安全策略和轨迹回放。
 
+根目录下还提供一个本地演示流程文件 `DEMO_TEST_FLOW.md`，用于在 2 分钟内快速覆盖核心功能。该文件和 `README.txt` 一样被 `.gitignore` 忽略，不作为源码提交内容的一部分。
+
 当前 demo 项目故意包含一个失败测试，用于视频中展示 agent 从失败到修复的过程：
 
 ```bash
@@ -211,10 +220,11 @@ uv run python -m mini_agent --mode plan --workspace examples/plan_alarm_core_arc
 - `docs/specs/05-safety-policy.md`：workspace、安全命令和敏感文件策略。
 - `docs/specs/06-context-management.md`：上下文组成和压缩策略。
 - `docs/specs/07-demo-scenario.md`：视频演示任务设计。
+- `docs/specs/08-skills.md`：轻量 skill 机制、交互命令和持久化策略。
 
 ## 计划
 
-当前已完成 Milestone 1-3 的主体实现，并完成轨迹回放与轻量 skill 首版。下一阶段进入交付收尾：准备 README.txt 精简版、演示脚本和可录屏 demo；run index、轻量历史检索和更严格验证门禁作为后续加分项。
+当前已完成 Milestone 1-3 的主体实现，并完成轨迹回放与轻量 skill 首版。交付收尾材料已补齐：`README.txt` 精简版和 `DEMO_TEST_FLOW.md` 本地测试流程均放在根目录且不被 git 跟踪。Run index、轻量历史检索和更严格验证门禁作为后续加分项。
 
 详细计划见：
 
@@ -223,3 +233,4 @@ uv run python -m mini_agent --mode plan --workspace examples/plan_alarm_core_arc
 - `docs/plans/milestone-2-context-management.md`
 - `docs/plans/milestone-3-reliability-safety.md`
 - `docs/plans/milestone-4-observability-knowledge.md`
+- `docs/plans/milestone-5-skills.md`

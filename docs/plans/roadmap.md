@@ -18,9 +18,9 @@
    - 状态：已完成首版。
 
 4. Milestone 4: Observability And Knowledge
-   - 目标：让行为可复盘、可解释，并利用历史任务经验。
-   - 关键词：structured logs、report、replay、run index、lightweight RAG。
-   - 状态：轨迹回放与 Markdown 报告已完成首版，run index 和 lightweight RAG 未实现。
+   - 目标：让行为可复盘、可解释。
+   - 关键词：structured logs、report、replay。
+   - 状态：轨迹回放与 Markdown 报告已完成首版。
 
 5. Lightweight Skills
    - 目标：让用户可以把可复用工作方式写成本地 SKILL.md，并在交互会话中持久启用。
@@ -34,8 +34,8 @@
 - Milestone 1 证明 agent loop 是自研且可运行的。
 - Milestone 2 证明 agent 能管理上下文，而不是只靠一次 prompt。
 - Milestone 3 证明 agent runtime 有可靠性和权限意识。
-- Milestone 4 证明 agent 行为可观测，并能从历史轨迹中提取经验。
+- Milestone 4 证明 agent 行为可观测、可回放。
 
 ## Current Priority
 
-下一阶段优先进入考核交付收尾：准备 1000 汉字以内的 README.txt、2 分钟演示脚本和稳定 demo 命令。Run index、lightweight RAG、Repo map、apply_patch 工具和更严格的验证门禁作为后续加分项排期。
+当前优先级是考核交付定稿：README.md、README.txt、核心 docs 和 2 分钟测试流程已经对齐现有功能，接下来只做必要修正与演示稳定性检查。

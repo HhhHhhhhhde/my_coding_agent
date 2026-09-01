@@ -1,14 +1,14 @@
-# Milestone 4: Observability And Knowledge
+# Milestone 4: Observability And Replay
 
 ## 状态
 
-已完成轨迹回放与 Markdown 报告首版。Run Index 与 Lightweight RAG 暂未实现，保留为后续加分项。
+已完成轨迹回放与 Markdown 报告首版。
 
 ## 目标
 
-让 agent 的行为可复盘、可解释，并开始利用历史任务经验辅助后续任务。
+让 agent 的行为可复盘、可解释。
 
-这一阶段包括日志系统升级、轨迹回放、报告生成，以及轻量 RAG。RAG 不一开始上复杂向量库，先从结构化日志和关键词检索做起。
+这一阶段包括结构化日志、轨迹回放和报告生成。用户可以从命令行或交互模式查看最近运行，也可以把 JSONL trajectory 转成 Markdown 报告。
 
 ## 必做范围
 
@@ -26,37 +26,22 @@
 
 3. Replay
    - 提供 trajectory replay 命令。
-   - 可以按步骤查看模型动作和工具结果。
-   - 可以过滤错误步骤、文件修改步骤、验证步骤。
-   - 状态：已完成基础 replay；过滤视图暂未实现。
+   - 支持 `latest`、序号和具体 JSONL 路径。
+   - 交互模式提供 `/runs`、`/replay latest`、`/replay N` 和 `/replay PATH`。
+   - 状态：已完成。
 
-4. Run Index
-   - 按 workspace 保存历史 run 索引。
-   - 记录 task、status、summary、modified_files、verification。
-   - 支持按关键词搜索历史任务。
-   - 状态：未实现。
-
-5. Lightweight RAG
-   - 从历史 run index 和报告中检索相似任务。
-   - 使用关键词、路径、工具类型和错误类型打分。
-   - 将少量相关历史经验注入 prompt。
-   - 明确标记 historical context，避免混淆当前任务事实。
-   - 状态：未实现。
-
-6. Knowledge Hygiene
-   - 不索引 `.env`、凭据、敏感文件。
-   - 不把失败经验当成必然正确做法。
-   - 历史检索结果需要包含来源 trajectory 或 report 路径。
+4. Replay Hygiene
+   - 报告只复盘本地 trajectory 已记录的信息。
+   - 敏感文件仍由 safety policy 在工具层拒绝。
+   - 报告包含来源 trajectory 路径，便于定位原始日志。
 
 ## 验收标准
 
 1. 给定一条 trajectory，可以生成可读 Markdown 报告。
 2. 失败任务报告能指出失败阶段和主要错误类型。
-3. 用户可以搜索历史任务。
-4. agent 遇到相似任务时，可以看到相关历史摘要。
-5. 历史上下文不会覆盖当前用户明确要求。
-
-当前已满足第 1、2 项；第 3-5 项依赖 Run Index 和 Lightweight RAG，暂列后续。
+3. 用户可以在交互模式列出最近轨迹。
+4. 用户可以在交互模式查看最新轨迹或指定轨迹。
+5. replay 输出包含任务、步骤、修改文件、验证命令和最终总结。
 
 ## 使用方式
 
@@ -69,10 +54,9 @@ uv run python -m mini_agent --workspace . --replay latest --replay-output report
 
 ## 取舍原则
 
-1. 先做结构化日志，再做 RAG。
-2. 先做关键词检索，再考虑 embedding。
-3. 所有历史知识都必须有来源路径。
-4. 可解释性优先于检索复杂度。
+1. 可读性优先于格式复杂度。
+2. 命令行和交互模式复用同一套 replay 生成逻辑。
+3. 报告必须保留来源路径，方便回到原始 JSONL。
 
 ## 非目标
 

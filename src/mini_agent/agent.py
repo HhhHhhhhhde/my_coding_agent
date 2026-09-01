@@ -39,7 +39,7 @@ class CodingAgent:
         self.on_thinking = on_thinking
         self.on_confirmation = on_confirmation
 
-    def run(self, user_task: str, session_context: str = "") -> AgentResult:
+    def run(self, user_task: str, session_context: str = "", skill_context: str = "", active_skills: list[str] | None = None) -> AgentResult:
         target_scope, target_scope_reason = infer_initial_target_scope(user_task, self.workspace)
         state = AgentState(
             user_task=user_task,
@@ -47,6 +47,8 @@ class CodingAgent:
             mode=self.mode,
             max_steps=self.max_steps,
             session_context=session_context,
+            skill_context=skill_context,
+            active_skills=list(active_skills or []),
             target_scope=target_scope,
             target_scope_reason=target_scope_reason,
         )
@@ -58,6 +60,7 @@ class CodingAgent:
             max_steps=self.max_steps,
             has_session_context=bool(session_context.strip()),
             session_context=session_context,
+            active_skills=list(active_skills or []),
         )
         tool_context = ToolContext(
             workspace=self.workspace,

@@ -23,6 +23,7 @@ class TrajectoryLogger:
         max_steps: int,
         has_session_context: bool,
         session_context: str = "",
+        active_skills: list[str] | None = None,
     ) -> None:
         self._write(
             {
@@ -34,6 +35,7 @@ class TrajectoryLogger:
                 "max_steps": max_steps,
                 "has_session_context": has_session_context,
                 "session_context_preview": session_context[:500] if has_session_context else "",
+                "active_skills": active_skills or [],
             }
         )
 

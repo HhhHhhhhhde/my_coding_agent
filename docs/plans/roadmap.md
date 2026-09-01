@@ -22,6 +22,11 @@
    - 关键词：structured logs、report、replay、run index、lightweight RAG。
    - 状态：轨迹回放与 Markdown 报告已完成首版，run index 和 lightweight RAG 未实现。
 
+5. Lightweight Skills
+   - 目标：让用户可以把可复用工作方式写成本地 SKILL.md，并在交互会话中持久启用。
+   - 关键词：workspace skills、active skill context、interactive commands、agent-authored skills。
+   - 状态：已完成首版。
+
 ## Design Principle
 
 每个 milestone 都必须保留一个清楚的架构主题：

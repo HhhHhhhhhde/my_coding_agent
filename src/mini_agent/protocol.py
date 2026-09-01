@@ -70,6 +70,8 @@ class AgentState:
     mode: str
     max_steps: int
     session_context: str = ""
+    skill_context: str = ""
+    active_skills: list[str] = field(default_factory=list)
     target_scope: str = ""
     target_scope_reason: str = ""
     working_notes: dict[str, str] = field(default_factory=dict)

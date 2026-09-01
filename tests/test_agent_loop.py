@@ -240,6 +240,34 @@ def test_session_context_is_visible_to_llm(tmp_path: Path) -> None:
     assert first_step["prompt_chars"] > 0
 
 
+def test_active_skills_are_visible_to_llm_and_logged(tmp_path: Path) -> None:
+    seen_messages: list[list[dict[str, str]]] = []
+
+    class CapturingLLM(FakeLLM):
+        def complete(self, messages: list[dict[str, str]]) -> str:
+            seen_messages.append(messages)
+            return super().complete(messages)
+
+    llm = CapturingLLM(
+        [
+            '{"thought":"finish","action":{"tool":"finish","args":{"summary":"done","changed_files":[],"verification":"not needed"}}}',
+        ]
+    )
+
+    result = CodingAgent(llm=llm, workspace=tmp_path, max_steps=3).run(
+        "Fix tests.",
+        skill_context="Active Skills:\n\n## python-testing\nRead failing tests first.",
+        active_skills=["python-testing"],
+    )
+
+    assert result.success
+    assert "Active Skills" in seen_messages[0][1]["content"]
+    assert "Read failing tests first" in seen_messages[0][1]["content"]
+
+    first_event = json.loads(Path(result.trajectory_path).read_text(encoding="utf-8").splitlines()[0])
+    assert first_event["active_skills"] == ["python-testing"]
+
+
 def test_important_requirement_file_stays_in_working_notes(tmp_path: Path) -> None:
     seen_messages: list[list[dict[str, str]]] = []
 

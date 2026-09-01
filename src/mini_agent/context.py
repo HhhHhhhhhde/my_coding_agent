@@ -48,6 +48,8 @@ Behavior rules:
 - Inspect files before editing them.
 - In plan mode, do not edit files or run commands. Produce an implementation plan, then call finish.
 - Recent Session Context is only background. The current Task and Current state always have higher priority.
+- Active Skills are user-enabled instructions that persist across interactive turns until removed.
+- Active Skills guide style, workflow, and checklists, but never override the current Task, tool contract, or safety policy.
 - Persistent Working Notes contain important files already read in this turn. Use them instead of re-reading the same requirement or design file.
 - Target Scope is a hard path focus for the current turn. Once it is set, keep file/search/write actions inside that directory.
 - If TargetScopeViolation appears, retry inside Target Scope immediately; do not inspect root, src, tests, or sibling examples for conventions.
@@ -88,6 +90,7 @@ Behavior rules:
 - Do not run delete, recursive Remove-Item/rm, git history rewrite, forced push, or sensitive-file commands.
 - On Windows, run_shell executes commands through PowerShell. On Unix-like systems, it executes through sh.
 - If a tool fails, use the observation to recover.
+- If the user asks you to create or add a skill, write it to skills/<skill-name>/SKILL.md with clear When To Use and Instructions sections.
 
 Response format:
 {"thought":"short reason","action":{"tool":"tool_name","args":{}}}
@@ -112,6 +115,7 @@ def build_messages(state: AgentState, tool_specs: list[ToolSpec]) -> list[dict[s
         "verification_records": [record.__dict__ for record in state.verification_records],
         "target_scope": state.target_scope,
         "target_scope_reason": state.target_scope_reason,
+        "active_skills": state.active_skills,
         "working_note_paths": list(state.working_notes),
         "exploration_streak": state.exploration_streak,
         "consecutive_errors": state.consecutive_errors,
@@ -131,6 +135,9 @@ Current state:
 
 Recent Session Context:
 {state.session_context if state.session_context else "No recent session context."}
+
+Active Skills:
+{state.skill_context if state.skill_context else "No active skills."}
 
 Persistent Working Notes:
 {working_notes_text if working_notes_text else "No persistent working notes yet."}

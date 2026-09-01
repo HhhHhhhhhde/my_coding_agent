@@ -16,6 +16,7 @@ from .logger import append_turn_summary
 from .protocol import Action, AgentResult, Observation
 from .replay import list_trajectories, render_trajectory_report, resolve_trajectory
 from .session import SessionState, build_session_turn, format_turn_summary
+from .skills import SkillSession, create_skill_template, discover_skills, format_skill_list, load_skill
 from .turn_summary import generate_turn_summary
 
 
@@ -85,9 +86,15 @@ def run_replay(args: argparse.Namespace) -> int:
     return 0
 
 
-def run_single_task(args: argparse.Namespace, config: object, session_context: str = "") -> AgentResult:
+def run_single_task(
+    args: argparse.Namespace,
+    config: object,
+    session_context: str = "",
+    skill_context: str = "",
+    active_skills: list[str] | None = None,
+) -> AgentResult:
     workspace = Path(args.workspace).resolve()
-    print_header(args.task, workspace, config.model, args.max_steps, args.mode)
+    print_header(args.task, workspace, config.model, args.max_steps, args.mode, active_skills=active_skills)
     llm = LLMClient(config)
     agent = CodingAgent(
         llm=llm,
@@ -98,7 +105,7 @@ def run_single_task(args: argparse.Namespace, config: object, session_context: s
         on_thinking=print_thinking,
         on_confirmation=confirm_tool_action if sys.stdin.isatty() else None,
     )
-    result = agent.run(args.task, session_context=session_context)
+    result = agent.run(args.task, session_context=session_context, skill_context=skill_context, active_skills=active_skills)
     if args.mode == "plan" and result.summary:
         output_path = save_plan_result(result.summary, workspace, Path(args.plan_output_dir), args.task)
         result = replace(result, output_path=str(output_path))
@@ -111,6 +118,7 @@ def run_single_task(args: argparse.Namespace, config: object, session_context: s
 def run_interactive_session(args: argparse.Namespace) -> int:
     config = load_config(args.model)
     session = SessionState()
+    skill_session = SkillSession()
     clear_screen()
     print_banner(args.mode)
     args.mode = choose_mode(args.mode)
@@ -125,7 +133,7 @@ def run_interactive_session(args: argparse.Namespace) -> int:
             print("  Bye.")
             return 0
         if is_session_command(args.task):
-            if handle_session_command(args.task, args, session):
+            if handle_session_command(args.task, args, session, skill_session):
                 return 0
             args.task = ""
             continue
@@ -145,18 +153,24 @@ def run_interactive_session(args: argparse.Namespace) -> int:
             continue
 
         workspace = str(Path(args.workspace).resolve())
-        result = run_single_task(args, config, session_context=session_context)
+        result = run_single_task(
+            args,
+            config,
+            session_context=session_context,
+            skill_context=skill_session.prompt_context(),
+            active_skills=skill_session.names(),
+        )
         turn = build_session_turn(args.task, args.mode, workspace, result)
         session.add_turn(turn)
         args.task = ""
         next_action = input(
-            "  Next: Enter=new task, b=build, p=plan, m=switch, /history, /runs, /replay latest, /clear, q=quit\n  > "
+            "  Next: Enter=new task, b=build, p=plan, m=switch, /history, /skills, /runs, /clear, q=quit\n  > "
         ).strip()
         if is_exit_command(next_action):
             print("  Bye.")
             return 0
         if is_session_command(next_action):
-            if handle_session_command(next_action, args, session):
+            if handle_session_command(next_action, args, session, skill_session):
                 return 0
             continue
         next_action = next_action.lower()
@@ -196,7 +210,12 @@ def is_session_command(value: str) -> bool:
     return text.startswith("/")
 
 
-def handle_session_command(command: str, args: argparse.Namespace, session: SessionState) -> bool:
+def handle_session_command(
+    command: str,
+    args: argparse.Namespace,
+    session: SessionState,
+    skill_session: SkillSession | None = None,
+) -> bool:
     text = command.strip()
     lower = text.lower()
     name, _, value = text.partition(" ")
@@ -224,6 +243,12 @@ def handle_session_command(command: str, args: argparse.Namespace, session: Sess
         return False
     if name == "/history":
         print_box(["Session History", "", session.history_text()])
+        return False
+    if name == "/skills":
+        print_box(["Skills", "", format_skill_list(discover_skills(Path(args.workspace).resolve()))], width=MODE_BOX_WIDTH)
+        return False
+    if name == "/skill":
+        print_skill_command(Path(args.workspace).resolve(), value, skill_session or SkillSession())
         return False
     if name == "/runs":
         print_box(["Run History", "", format_run_list(Path(args.workspace).resolve())], width=MODE_BOX_WIDTH)
@@ -259,6 +284,12 @@ def handle_session_command(command: str, args: argparse.Namespace, session: Sess
                 "",
                 "/summary        查看上一轮任务总结",
                 "/history        查看最近几轮任务摘要",
+                "/skills         列出 workspace skills",
+                "/skill active   查看已启用 skill",
+                "/skill use NAME 启用 skills/NAME/SKILL.md",
+                "/skill remove NAME 移除已启用 skill",
+                "/skill clear    清空已启用 skill",
+                "/skill new NAME 创建 skill 模板",
                 "/runs           列出最近的轨迹日志",
                 "/replay latest  查看最新轨迹报告",
                 "/replay N       查看 /runs 中第 N 条轨迹",
@@ -275,6 +306,45 @@ def handle_session_command(command: str, args: argparse.Namespace, session: Sess
 
     print_box(["Session", "", "未知会话命令。使用 /help 查看可用命令。"])
     return False
+
+
+def print_skill_command(workspace: Path, value: str, skill_session: SkillSession) -> None:
+    command, _, argument = value.strip().partition(" ")
+    command = command.lower()
+    argument = argument.strip()
+    if command in {"", "active", "status"}:
+        print_box(["Skills", "", skill_session.status_text()], width=MODE_BOX_WIDTH)
+        return
+    if command in {"use", "add", "enable"}:
+        try:
+            skill = load_skill(workspace, argument)
+            skill_session.activate(skill)
+        except Exception as exc:
+            print_box(["Skills", "", f"启用失败：{exc}"], width=MODE_BOX_WIDTH)
+            return
+        print_box(["Skills", "", f"已启用 skill：{skill.name}\n{skill.path}"], width=MODE_BOX_WIDTH)
+        return
+    if command in {"remove", "rm", "disable"}:
+        if not argument:
+            print_box(["Skills", "", "请指定要移除的 skill 名称。"], width=MODE_BOX_WIDTH)
+            return
+        removed = skill_session.remove(argument)
+        message = f"已移除 skill：{argument}" if removed else f"未启用这个 skill：{argument}"
+        print_box(["Skills", "", message], width=MODE_BOX_WIDTH)
+        return
+    if command == "clear":
+        skill_session.clear()
+        print_box(["Skills", "", "已清空所有启用的 skill。"], width=MODE_BOX_WIDTH)
+        return
+    if command in {"new", "create"}:
+        try:
+            path = create_skill_template(workspace, argument)
+        except Exception as exc:
+            print_box(["Skills", "", f"创建失败：{exc}"], width=MODE_BOX_WIDTH)
+            return
+        print_box(["Skills", "", f"已创建 skill 模板：{path}"], width=MODE_BOX_WIDTH)
+        return
+    print_box(["Skills", "", "用法：/skills；/skill active；/skill use NAME；/skill remove NAME；/skill clear；/skill new NAME"], width=MODE_BOX_WIDTH)
 
 
 def format_run_list(workspace: Path, limit: int = 10) -> str:
@@ -395,19 +465,27 @@ def clear_screen() -> None:
     os.system("cls" if os.name == "nt" else "clear")
 
 
-def print_header(task: str, workspace: Path, model: str, max_steps: int, mode: str) -> None:
+def print_header(
+    task: str,
+    workspace: Path,
+    model: str,
+    max_steps: int,
+    mode: str,
+    active_skills: list[str] | None = None,
+) -> None:
+    lines = [
+        "Mini Coding Agent",
+        "",
+        f"Task      : {task}",
+        f"Workspace : {workspace}",
+        f"Model     : {model}",
+        f"Mode      : {mode}",
+        f"Max steps : {max_steps}",
+    ]
+    if active_skills:
+        lines.append(f"Skills    : {', '.join(active_skills)}")
     print()
-    print_box(
-        [
-            "Mini Coding Agent",
-            "",
-            f"Task      : {task}",
-            f"Workspace : {workspace}",
-            f"Model     : {model}",
-            f"Mode      : {mode}",
-            f"Max steps : {max_steps}",
-        ]
-    )
+    print_box(lines, width=MODE_BOX_WIDTH)
 
 
 def print_step(step: int, action: Action | None, observation: Observation) -> None:
@@ -431,7 +509,7 @@ def confirm_tool_action(observation: Observation) -> bool:
 
 
 def print_thinking(step: int) -> None:
-    print(f"  · step {step:02d}  Thinking... waiting for model response", end="", flush=True)
+    print(f"  · step {step:02d}  Thinking... waiting for model response", flush=True)
 
 
 def print_turn_result(result: AgentResult) -> None:
@@ -522,19 +600,26 @@ def print_box(lines: list[str], indent: int = 0, border: str = "single", width: 
     content_width = inner_width - 2
     print(prefix + top_left + horizontal * inner_width + top_right)
     for raw_line in lines:
-        center = should_center_box_line(raw_line)
-        visible_line = strip_center_marker(raw_line)
-        wrapped_lines = wrap_box_line(visible_line, content_width)
-        for line in wrapped_lines:
-            if center:
-                line = center_visual(line, content_width)
-            print(prefix + vertical + " " + pad_visual(line, content_width) + " " + vertical)
+        for visible_line in split_box_line(raw_line):
+            center = should_center_box_line(visible_line)
+            visible_line = strip_center_marker(visible_line)
+            wrapped_lines = wrap_box_line(visible_line, content_width)
+            for line in wrapped_lines:
+                if center:
+                    line = center_visual(line, content_width)
+                print(prefix + vertical + " " + pad_visual(line, content_width) + " " + vertical)
     print(prefix + bottom_left + horizontal * inner_width + bottom_right)
     print()
 
 
+def split_box_line(text: str) -> list[str]:
+    return text.splitlines() or [""]
+
+
 def wrap_box_line(text: str, width: int) -> list[str]:
     if text == "" or should_center_box_line(text):
+        return wrap_visual(text, width)
+    if text.lstrip().startswith(("- ", "* ")):
         return wrap_visual(text, width)
 
     separator_index = text.find(": ")

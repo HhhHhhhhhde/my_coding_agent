@@ -14,14 +14,18 @@ from mini_agent.cli import (
     print_replay_command,
     print_box,
     print_banner,
+    print_header,
+    print_thinking,
     read_interactive_args,
     save_plan_result,
+    split_box_line,
     summarize_step,
     wrap_box_line,
     wrap_visual,
 )
 from mini_agent.protocol import Action, Observation
 from mini_agent.session import SessionState
+from mini_agent.skills import SkillSession
 
 
 def write_cli_jsonl(path: Path) -> None:
@@ -61,6 +65,18 @@ def test_wrap_box_line_aligns_field_continuation() -> None:
     assert lines[1].startswith(" " * len("Task      : "))
 
 
+def test_wrap_box_line_keeps_bullets_left_aligned() -> None:
+    lines = wrap_box_line("- compact-planner: D:/codes/ai_agent/coding_agent/skills/compact-planner/SKILL.md", 36)
+
+    assert lines[0].startswith("- compact-planner")
+    assert lines[1]
+    assert not lines[1].startswith(" " * len("- compact-planner: "))
+
+
+def test_split_box_line_preserves_embedded_newlines() -> None:
+    assert split_box_line("已启用 skill：\n- python-testing: path") == ["已启用 skill：", "- python-testing: path"]
+
+
 def test_print_box_supports_wider_centered_lines(capsys) -> None:
     print_box(["Run Mode", "", center_line("● BUILD             ○ plan")], indent=2, width=MODE_BOX_WIDTH)
 
@@ -89,6 +105,22 @@ def test_banner_uses_large_ascii_letters(capsys) -> None:
     assert BANNER_LINES[0].strip() in output
     assert "/ __|" in output
     assert "agent mode: build" in output
+
+
+def test_header_uses_wide_box_and_shows_active_skills(capsys, tmp_path: Path) -> None:
+    print_header("Fix tests", tmp_path, "model", 20, "build", active_skills=["demo-skill"])
+
+    output = capsys.readouterr().out
+    assert "Mini Coding Agent" in output
+    assert "Skills    : demo-skill" in output
+    assert "─" * (MODE_BOX_WIDTH - 2) in output
+
+
+def test_header_hides_skills_when_none(capsys, tmp_path: Path) -> None:
+    print_header("Fix tests", tmp_path, "model", 20, "build")
+
+    output = capsys.readouterr().out
+    assert "Skills    :" not in output
 
 
 def test_box_prefix_falls_back_to_indent_when_terminal_is_narrow(monkeypatch) -> None:
@@ -158,6 +190,61 @@ def test_runs_command_uses_wide_box(tmp_path: Path, capsys) -> None:
     assert "─" * (MODE_BOX_WIDTH - 2) in output
 
 
+def test_skills_command_lists_workspace_skills(tmp_path: Path, capsys) -> None:
+    skill_path = tmp_path / "skills" / "python-testing" / "SKILL.md"
+    skill_path.parent.mkdir(parents=True)
+    skill_path.write_text("# Python Testing\n\nRead tests first.\n", encoding="utf-8")
+    args = type("Args", (), {"workspace": str(tmp_path), "mode": "build"})()
+
+    handled = handle_session_command("/skills", args, SessionState())
+
+    output = capsys.readouterr().out
+    assert handled is False
+    assert "python-testing" in output
+
+
+def test_skill_use_and_remove_persist_in_skill_session(tmp_path: Path, capsys) -> None:
+    skill_path = tmp_path / "skills" / "python-testing" / "SKILL.md"
+    skill_path.parent.mkdir(parents=True)
+    skill_path.write_text("# Python Testing\n\nRead tests first.\n", encoding="utf-8")
+    args = type("Args", (), {"workspace": str(tmp_path), "mode": "build"})()
+    session = SessionState()
+    active_skills = SkillSession()
+
+    handle_session_command("/skill use python-testing", args, session, active_skills)
+    assert active_skills.names() == ["python-testing"]
+
+    handle_session_command("/skill remove python-testing", args, session, active_skills)
+    assert active_skills.names() == []
+    assert "已移除" in capsys.readouterr().out
+
+
+def test_skill_active_command_keeps_bullet_left_aligned(tmp_path: Path, capsys) -> None:
+    skill_path = tmp_path / "skills" / "python-testing" / "SKILL.md"
+    skill_path.parent.mkdir(parents=True)
+    skill_path.write_text("# Python Testing\n\nRead tests first.\n", encoding="utf-8")
+    args = type("Args", (), {"workspace": str(tmp_path), "mode": "build"})()
+    active_skills = SkillSession()
+
+    handle_session_command("/skill use python-testing", args, SessionState(), active_skills)
+    capsys.readouterr()
+    handle_session_command("/skill active", args, SessionState(), active_skills)
+
+    output = capsys.readouterr().out
+    assert "│ 已启用 skill：" in output
+    assert "│ - python-testing:" in output
+
+
+def test_skill_new_creates_template(tmp_path: Path, capsys) -> None:
+    args = type("Args", (), {"workspace": str(tmp_path), "mode": "build"})()
+    active_skills = SkillSession()
+
+    handle_session_command("/skill new Bug Fixing", args, SessionState(), active_skills)
+
+    assert (tmp_path / "skills" / "bug-fixing" / "SKILL.md").exists()
+    assert "已创建" in capsys.readouterr().out
+
+
 def test_read_interactive_args_does_not_clear_screen(monkeypatch) -> None:
     calls = 0
 
@@ -174,6 +261,13 @@ def test_read_interactive_args_does_not_clear_screen(monkeypatch) -> None:
 
     assert result.task == "q"
     assert calls == 0
+
+
+def test_print_thinking_ends_with_newline(capsys) -> None:
+    print_thinking(1)
+
+    output = capsys.readouterr().out
+    assert output.endswith("\n")
 
 
 def test_context_dependent_tasks_are_recognized() -> None:
